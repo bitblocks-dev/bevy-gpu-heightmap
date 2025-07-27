@@ -25,6 +25,7 @@ struct Triangle {
 pub struct ChunkGenerator<T> {
     pub surface_threshold: f32,
     pub num_voxels: i32,
+    pub chunk_size: f32,
     pub terrain_sampler: T,
 }
 
@@ -33,12 +34,17 @@ impl<T: Default> Default for ChunkGenerator<T> {
         Self {
             surface_threshold: 0.5,
             num_voxels: 32,
+            chunk_size: 32.0,
             terrain_sampler: T::default(),
         }
     }
 }
 
 impl<T: TerrainSampler> ChunkGenerator<T> {
+    fn voxel_scale(&self) -> f32 {
+        self.chunk_size / self.num_voxels as f32
+    }
+
     fn sample_density(
         &self,
         chunk_id: IVec3,
@@ -52,11 +58,11 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     }
 
     fn coord_to_local(&self, voxel_id: IVec3) -> Vec3 {
-        voxel_id.as_vec3()
+        voxel_id.as_vec3() * self.voxel_scale()
     }
 
     fn coord_to_world(&self, chunk_id: IVec3, voxel_id: IVec3) -> Vec3 {
-        (chunk_id * self.num_voxels + voxel_id).as_vec3()
+        (chunk_id * self.num_voxels + voxel_id).as_vec3() * self.voxel_scale()
     }
 
     fn index_from_coord(&self, voxel_id: IVec3) -> usize {
