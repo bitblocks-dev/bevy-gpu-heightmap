@@ -2,6 +2,7 @@ use bevy::color::palettes::css;
 use bevy::color::palettes::tailwind;
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_marching_cubes::chunk_generator::ChunkGenerator;
 use bevy_marching_cubes::terrain_sampler::NoiseTerrainSampler;
 use fastnoise_lite::FastNoiseLite;
@@ -10,7 +11,8 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            WireframePlugin,
+            WireframePlugin::default(),
+            EguiPlugin::default(),
             bevy_inspector_egui::quick::WorldInspectorPlugin::new(),
             bevy_panorbit_camera::PanOrbitCameraPlugin,
         ))
@@ -29,10 +31,8 @@ fn setup(
 ) {
     commands.spawn((
         Name::new("Camera"),
-        Camera3dBundle {
-            transform: Transform::from_xyz(4.0, 6.5, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ..default()
-        },
+        Camera3d::default(),
+        Transform::from_xyz(4.0, 6.5, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
         bevy_panorbit_camera::PanOrbitCamera {
             button_orbit: MouseButton::Left,
             button_pan: MouseButton::Left,
@@ -44,8 +44,12 @@ fn setup(
 
     commands.spawn((
         Name::new("Light"),
-        PointLightBundle {
-            transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        DirectionalLight {
+            illuminance: 4000.0,
+            ..default()
+        },
+        Transform {
+            rotation: Quat::from_euler(EulerRot::XYZ, -1.9, 0.8, 0.0),
             ..default()
         },
     ));
@@ -62,12 +66,9 @@ fn setup(
     let size = 8.0;
     commands.spawn((
         Name::new("MarchingCubesMesh"),
-        PbrBundle {
-            mesh: meshes.add(mesh),
-            material: materials.add(Color::from(tailwind::EMERALD_500)),
-            transform: Transform::from_translation(Vec3::splat(-size / 2.0))
-                .with_scale(Vec3::splat(size / chunk_generator.num_voxels as f32)),
-            ..default()
-        },
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(materials.add(Color::from(tailwind::EMERALD_500))),
+        Transform::from_translation(Vec3::splat(-size / 2.0))
+            .with_scale(Vec3::splat(size / chunk_generator.num_voxels as f32)),
     ));
 }

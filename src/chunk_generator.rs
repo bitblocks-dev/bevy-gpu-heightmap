@@ -1,8 +1,8 @@
 // Most of this code is from https://github.com/SebLague/Terraforming
 
 use bevy::math::{IVec2, IVec3, Vec3};
+use bevy::platform::collections::HashMap;
 use bevy::render::mesh::Mesh;
-use bevy::utils::HashMap;
 
 use crate::march_tables::*;
 use crate::terrain_sampler::TerrainSampler;
