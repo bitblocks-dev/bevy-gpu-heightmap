@@ -2,9 +2,9 @@ use bevy::color::palettes::css;
 use bevy::color::palettes::tailwind;
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
+use bevy_marching_cubes::chunk_generator::ChunkGenerator;
+use bevy_marching_cubes::terrain_sampler::NoiseTerrainSampler;
 use fastnoise_lite::FastNoiseLite;
-use marching_cubes::chunk_generator::ChunkGenerator;
-use marching_cubes::terrain_sampler::NoiseTerrainSampler;
 
 fn main() {
     App::new()

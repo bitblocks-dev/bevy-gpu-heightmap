@@ -10,5 +10,5 @@ bevy_panorbit_camera = "0.19.1"
 fastnoise-lite = "1.1.1"
 
 [lib]
-name = "bevy-marching-cubes"
+name = "bevy_marching_cubes"
 path = "src/lib.rs"
