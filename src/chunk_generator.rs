@@ -59,7 +59,7 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
         let x2 = self
             .terrain_sampler
             .sample_density(self.coord_to_world(coord - offset_x));
-        let dx = x2 - x1;
+        let dx = x1 - x2;
 
         let y1 = self
             .terrain_sampler
@@ -67,7 +67,7 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
         let y2 = self
             .terrain_sampler
             .sample_density(self.coord_to_world(coord - offset_y));
-        let dy = y2 - y1;
+        let dy = y1 - y2;
 
         let z1 = self
             .terrain_sampler
@@ -75,7 +75,7 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
         let z2 = self
             .terrain_sampler
             .sample_density(self.coord_to_world(coord - offset_z));
-        let dz = z2 - z1;
+        let dz = z1 - z2;
 
         Vec3::new(dx, dy, dz).normalize()
     }
