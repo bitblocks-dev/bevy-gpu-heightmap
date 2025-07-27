@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 noise_sampler = ["dep:fastnoise-lite"]
+height_sampler = []
 
 [dependencies]
 bevy = { version = "0.16.0", default-features = false, features = [
@@ -15,7 +16,6 @@ fastnoise-lite = { version = "1.1.1", optional = true }
 
 [dev-dependencies]
 bevy = "0.16.0"
-bevy-inspector-egui = "0.32.0"
 bevy_panorbit_camera = "0.27.0"
 
 [lib]

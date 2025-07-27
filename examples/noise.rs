@@ -2,9 +2,8 @@ use bevy::color::palettes::css;
 use bevy::color::palettes::tailwind;
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_marching_cubes::chunk_generator::ChunkGenerator;
-use bevy_marching_cubes::terrain_sampler::NoiseTerrainSampler;
+use bevy_marching_cubes::height_sampler::{HeightDensitySampler, NoiseHeightSampler};
 use fastnoise_lite::FastNoiseLite;
 
 fn main() {
@@ -12,8 +11,6 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             WireframePlugin::default(),
-            EguiPlugin::default(),
-            bevy_inspector_egui::quick::WorldInspectorPlugin::new(),
             bevy_panorbit_camera::PanOrbitCameraPlugin,
         ))
         .insert_resource(WireframeConfig {
@@ -57,11 +54,11 @@ fn setup(
     let mut noise = FastNoiseLite::with_seed(1);
     noise.set_frequency(Some(0.2));
 
-    let chunk_generator = ChunkGenerator::<NoiseTerrainSampler> {
+    let chunk_generator = ChunkGenerator {
         surface_threshold: 0.5,
         num_voxels: 32,
         chunk_size: 8.0,
-        terrain_sampler: NoiseTerrainSampler(noise),
+        terrain_sampler: HeightDensitySampler(NoiseHeightSampler(noise)),
     };
 
     let centering_offset = Vec3::splat(-chunk_generator.chunk_size * 0.5);

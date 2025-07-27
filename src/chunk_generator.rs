@@ -5,7 +5,7 @@ use bevy::platform::collections::HashMap;
 use bevy::render::mesh::Mesh;
 
 use crate::march_tables::*;
-use crate::terrain_sampler::TerrainSampler;
+use crate::terrain_sampler::DensitySampler;
 
 #[derive(Debug, Clone)]
 struct Vertex {
@@ -40,7 +40,13 @@ impl<T: Default> Default for ChunkGenerator<T> {
     }
 }
 
-impl<T: TerrainSampler> ChunkGenerator<T> {
+pub struct SampleContext<'a, T> {
+    pub world_position: Vec3,
+    pub local_position: Vec3,
+    pub generator: &'a ChunkGenerator<T>,
+}
+
+impl<T: DensitySampler> ChunkGenerator<T> {
     pub fn voxel_size(&self) -> f32 {
         self.chunk_size / self.num_voxels as f32
     }
@@ -48,12 +54,15 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     fn sample_density(
         &self,
         chunk_id: IVec3,
-        voxel_id: IVec3,
+        sample_id: IVec3,
         cache: &mut HashMap<IVec3, f32>,
     ) -> f32 {
-        *cache.entry(voxel_id).or_insert_with(|| {
-            self.terrain_sampler
-                .sample_density(self.coord_to_world(chunk_id, voxel_id))
+        *cache.entry(sample_id).or_insert_with(|| {
+            self.terrain_sampler.sample_density(SampleContext {
+                world_position: self.coord_to_world(chunk_id, sample_id),
+                local_position: self.coord_to_local(sample_id),
+                generator: self,
+            })
         })
     }
 
@@ -73,23 +82,23 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     fn calculate_normal(
         &self,
         chunk_id: IVec3,
-        voxel_id: IVec3,
+        sample_id: IVec3,
         cache: &mut HashMap<IVec3, f32>,
     ) -> Vec3 {
         let offset_x = IVec3::new(1, 0, 0);
         let offset_y = IVec3::new(0, 1, 0);
         let offset_z = IVec3::new(0, 0, 1);
 
-        let x1 = self.sample_density(chunk_id, voxel_id + offset_x, cache);
-        let x2 = self.sample_density(chunk_id, voxel_id - offset_x, cache);
+        let x1 = self.sample_density(chunk_id, sample_id + offset_x, cache);
+        let x2 = self.sample_density(chunk_id, sample_id - offset_x, cache);
         let dx = x1 - x2;
 
-        let y1 = self.sample_density(chunk_id, voxel_id + offset_y, cache);
-        let y2 = self.sample_density(chunk_id, voxel_id - offset_y, cache);
+        let y1 = self.sample_density(chunk_id, sample_id + offset_y, cache);
+        let y2 = self.sample_density(chunk_id, sample_id - offset_y, cache);
         let dy = y1 - y2;
 
-        let z1 = self.sample_density(chunk_id, voxel_id + offset_z, cache);
-        let z2 = self.sample_density(chunk_id, voxel_id - offset_z, cache);
+        let z1 = self.sample_density(chunk_id, sample_id + offset_z, cache);
+        let z2 = self.sample_density(chunk_id, sample_id - offset_z, cache);
         let dz = z1 - z2;
 
         Vec3::new(dx, dy, dz).normalize()
@@ -101,27 +110,27 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     fn create_vertex(
         &self,
         chunk_id: IVec3,
-        voxel_a_id: IVec3,
-        voxel_b_id: IVec3,
+        sample_a_id: IVec3,
+        sample_b_id: IVec3,
         cache: &mut HashMap<IVec3, f32>,
     ) -> Vertex {
-        let pos_a = self.coord_to_local(voxel_a_id);
-        let pos_b = self.coord_to_local(voxel_b_id);
-        let density_a = self.sample_density(chunk_id, voxel_a_id, cache);
-        let density_b = self.sample_density(chunk_id, voxel_b_id, cache);
+        let pos_a = self.coord_to_local(sample_a_id);
+        let pos_b = self.coord_to_local(sample_b_id);
+        let density_a = self.sample_density(chunk_id, sample_a_id, cache);
+        let density_b = self.sample_density(chunk_id, sample_b_id, cache);
 
         // Interpolate between the two corner points based on the density
         let t = (self.surface_threshold - density_a) / (density_b - density_a);
         let position = pos_a + t * (pos_b - pos_a);
 
         // Normal:
-        let normal_a = self.calculate_normal(chunk_id, voxel_a_id, cache);
-        let normal_b = self.calculate_normal(chunk_id, voxel_b_id, cache);
+        let normal_a = self.calculate_normal(chunk_id, sample_a_id, cache);
+        let normal_b = self.calculate_normal(chunk_id, sample_b_id, cache);
         let normal = (normal_a + t * (normal_b - normal_a)).normalize();
 
         // ID
-        let index_a = self.index_from_coord(voxel_a_id);
-        let index_b = self.index_from_coord(voxel_b_id);
+        let index_a = self.index_from_coord(sample_a_id);
+        let index_b = self.index_from_coord(sample_b_id);
 
         // Create vertex
         Vertex {

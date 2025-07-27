@@ -1,18 +1,22 @@
 use bevy::prelude::*;
 
-pub trait TerrainSampler {
-    fn sample_density(&self, position: Vec3) -> f32;
+use crate::chunk_generator::SampleContext;
+
+pub trait DensitySampler {
+    fn sample_density(&self, context: SampleContext<Self>) -> f32
+    where
+        Self: Sized;
 }
 
-pub struct BoxTerrainSampler {
+pub struct BoxDensitySampler {
     pub center: Vec3,
     pub size: Vec3,
     pub rotation: Quat,
 }
 
-impl TerrainSampler for BoxTerrainSampler {
-    fn sample_density(&self, position: Vec3) -> f32 {
-        let position = position - self.center;
+impl DensitySampler for BoxDensitySampler {
+    fn sample_density(&self, context: SampleContext<Self>) -> f32 {
+        let position = context.world_position - self.center;
         let position = self.rotation * position;
         let distance = position.abs();
         let normalized_distance = distance / (self.size * 0.5);
@@ -21,7 +25,7 @@ impl TerrainSampler for BoxTerrainSampler {
     }
 }
 
-impl Default for BoxTerrainSampler {
+impl Default for BoxDensitySampler {
     fn default() -> Self {
         Self {
             center: Vec3::splat(16.0),
@@ -32,15 +36,20 @@ impl Default for BoxTerrainSampler {
 }
 
 #[cfg(feature = "noise_sampler")]
-pub struct NoiseTerrainSampler(pub fastnoise_lite::FastNoiseLite);
+pub struct NoiseDensitySampler(pub fastnoise_lite::FastNoiseLite);
 
-impl TerrainSampler for NoiseTerrainSampler {
-    fn sample_density(&self, position: Vec3) -> f32 {
-        self.0.get_noise_3d(position.x, position.y, position.z) * 0.5 + 0.5
+impl DensitySampler for NoiseDensitySampler {
+    fn sample_density(&self, context: SampleContext<Self>) -> f32 {
+        self.0.get_noise_3d(
+            context.world_position.x,
+            context.world_position.y,
+            context.world_position.z,
+        ) * 0.5
+            + 0.5
     }
 }
 
-impl Default for NoiseTerrainSampler {
+impl Default for NoiseDensitySampler {
     fn default() -> Self {
         Self(fastnoise_lite::FastNoiseLite::new())
     }
