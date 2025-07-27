@@ -39,42 +39,51 @@ impl<T: Default> Default for ChunkGenerator<T> {
 }
 
 impl<T: TerrainSampler> ChunkGenerator<T> {
-    fn coord_to_world(&self, coord: IVec3) -> Vec3 {
-        coord.as_vec3()
+    fn sample_density(
+        &self,
+        chunk_id: IVec3,
+        voxel_id: IVec3,
+        cache: &mut HashMap<IVec3, f32>,
+    ) -> f32 {
+        *cache.entry(voxel_id).or_insert_with(|| {
+            self.terrain_sampler
+                .sample_density(self.coord_to_world(chunk_id, voxel_id))
+        })
     }
 
-    fn index_from_coord(&self, coord: IVec3) -> usize {
+    fn coord_to_local(&self, voxel_id: IVec3) -> Vec3 {
+        voxel_id.as_vec3()
+    }
+
+    fn coord_to_world(&self, chunk_id: IVec3, voxel_id: IVec3) -> Vec3 {
+        (chunk_id * self.num_voxels + voxel_id).as_vec3()
+    }
+
+    fn index_from_coord(&self, voxel_id: IVec3) -> usize {
         let num_samples = self.num_voxels + 1; // +1 because we need to include the last sample
-        (coord.z * num_samples * num_samples + coord.y * num_samples + coord.x) as usize
+        (voxel_id.z * num_samples * num_samples + voxel_id.y * num_samples + voxel_id.x) as usize
     }
 
-    fn calculate_normal(&self, coord: IVec3) -> Vec3 {
+    fn calculate_normal(
+        &self,
+        chunk_id: IVec3,
+        voxel_id: IVec3,
+        cache: &mut HashMap<IVec3, f32>,
+    ) -> Vec3 {
         let offset_x = IVec3::new(1, 0, 0);
         let offset_y = IVec3::new(0, 1, 0);
         let offset_z = IVec3::new(0, 0, 1);
 
-        let x1 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord + offset_x));
-        let x2 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord - offset_x));
+        let x1 = self.sample_density(chunk_id, voxel_id + offset_x, cache);
+        let x2 = self.sample_density(chunk_id, voxel_id - offset_x, cache);
         let dx = x1 - x2;
 
-        let y1 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord + offset_y));
-        let y2 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord - offset_y));
+        let y1 = self.sample_density(chunk_id, voxel_id + offset_y, cache);
+        let y2 = self.sample_density(chunk_id, voxel_id - offset_y, cache);
         let dy = y1 - y2;
 
-        let z1 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord + offset_z));
-        let z2 = self
-            .terrain_sampler
-            .sample_density(self.coord_to_world(coord - offset_z));
+        let z1 = self.sample_density(chunk_id, voxel_id + offset_z, cache);
+        let z2 = self.sample_density(chunk_id, voxel_id - offset_z, cache);
         let dz = z1 - z2;
 
         Vec3::new(dx, dy, dz).normalize()
@@ -83,24 +92,30 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     // Calculate the position of the vertex
     // The position lies somewhere along the edge defined by the two corner points.
     // Where exactly along the edge is determined by the values of each corner point.
-    fn create_vertex(&self, coord_a: IVec3, coord_b: IVec3) -> Vertex {
-        let pos_a = self.coord_to_world(coord_a);
-        let pos_b = self.coord_to_world(coord_b);
-        let density_a = self.terrain_sampler.sample_density(pos_a);
-        let density_b = self.terrain_sampler.sample_density(pos_b);
+    fn create_vertex(
+        &self,
+        chunk_id: IVec3,
+        voxel_a_id: IVec3,
+        voxel_b_id: IVec3,
+        cache: &mut HashMap<IVec3, f32>,
+    ) -> Vertex {
+        let pos_a = self.coord_to_local(voxel_a_id);
+        let pos_b = self.coord_to_local(voxel_b_id);
+        let density_a = self.sample_density(chunk_id, voxel_a_id, cache);
+        let density_b = self.sample_density(chunk_id, voxel_b_id, cache);
 
         // Interpolate between the two corner points based on the density
         let t = (self.surface_threshold - density_a) / (density_b - density_a);
         let position = pos_a + t * (pos_b - pos_a);
 
         // Normal:
-        let normal_a = self.calculate_normal(coord_a);
-        let normal_b = self.calculate_normal(coord_b);
+        let normal_a = self.calculate_normal(chunk_id, voxel_a_id, cache);
+        let normal_b = self.calculate_normal(chunk_id, voxel_b_id, cache);
         let normal = (normal_a + t * (normal_b - normal_a)).normalize();
 
         // ID
-        let index_a = self.index_from_coord(coord_a);
-        let index_b = self.index_from_coord(coord_b);
+        let index_a = self.index_from_coord(voxel_a_id);
+        let index_b = self.index_from_coord(voxel_b_id);
 
         // Create vertex
         Vertex {
@@ -110,14 +125,22 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
         }
     }
 
-    fn process_cube(&self, id: IVec3) -> Vec<Triangle> {
+    fn process_cube(
+        &self,
+        chunk_id: IVec3,
+        voxel_id: IVec3,
+        cache: &mut HashMap<IVec3, f32>,
+    ) -> Vec<Triangle> {
         let mut triangles = Vec::new();
 
-        if id.x >= self.num_voxels || id.y >= self.num_voxels || id.z >= self.num_voxels {
+        if voxel_id.x >= self.num_voxels
+            || voxel_id.y >= self.num_voxels
+            || voxel_id.z >= self.num_voxels
+        {
             return triangles;
         }
 
-        let coord = id;
+        let coord = voxel_id;
 
         // Calculate coordinates of each corner of the current cube
         let corner_coords = [
@@ -139,11 +162,7 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
             // Think of the configuration as an 8-bit binary number (each bit represents the state of a corner point).
             // The state of each corner point is either 0: above the surface, or 1: below the surface.
             // The code below sets the corresponding bit to 1, if the point is below the surface.
-            if self
-                .terrain_sampler
-                .sample_density(self.coord_to_world(*corner_coord))
-                < self.surface_threshold
-            {
+            if self.sample_density(chunk_id, *corner_coord, cache) < self.surface_threshold {
                 cube_configuration |= 1 << i;
             }
         }
@@ -173,9 +192,12 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
             let c1 = CORNER_INDEX_B_FROM_EDGE[edge_index_c];
 
             // Calculate positions of each vertex.
-            let vertex_a = self.create_vertex(corner_coords[a0], corner_coords[a1]);
-            let vertex_b = self.create_vertex(corner_coords[b0], corner_coords[b1]);
-            let vertex_c = self.create_vertex(corner_coords[c0], corner_coords[c1]);
+            let vertex_a =
+                self.create_vertex(chunk_id, corner_coords[a0], corner_coords[a1], cache);
+            let vertex_b =
+                self.create_vertex(chunk_id, corner_coords[b0], corner_coords[b1], cache);
+            let vertex_c =
+                self.create_vertex(chunk_id, corner_coords[c0], corner_coords[c1], cache);
 
             // Create triangle
             let tri = Triangle {
@@ -189,12 +211,14 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
         triangles
     }
 
-    pub fn generate_chunk(&self) -> Mesh {
+    pub fn generate_chunk(&self, chunk_id: IVec3) -> Mesh {
+        let mut cache = HashMap::<IVec3, f32>::new();
+
         let mut triangles = Vec::<Triangle>::new();
         for x in 0..self.num_voxels {
             for y in 0..self.num_voxels {
                 for z in 0..self.num_voxels {
-                    triangles.extend(self.process_cube(IVec3::new(x, y, z)));
+                    triangles.extend(self.process_cube(chunk_id, IVec3::new(x, y, z), &mut cache));
                 }
             }
         }

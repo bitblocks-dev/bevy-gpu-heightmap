@@ -61,14 +61,23 @@ fn setup(
         num_voxels: 32,
         terrain_sampler: NoiseTerrainSampler(noise),
     };
-    let mesh = chunk_generator.generate_chunk();
 
-    let size = 8.0;
+    // In meters
+    let chunk_size = 8.0;
     commands.spawn((
         Name::new("MarchingCubesMesh"),
-        Mesh3d(meshes.add(mesh)),
+        Mesh3d(meshes.add(chunk_generator.generate_chunk(IVec3::new(0, 0, 0)))),
         MeshMaterial3d(materials.add(Color::from(tailwind::EMERALD_500))),
-        Transform::from_translation(Vec3::splat(-size / 2.0))
-            .with_scale(Vec3::splat(size / chunk_generator.num_voxels as f32)),
+        Transform::from_translation(Vec3::splat(-chunk_size / 2.0))
+            .with_scale(Vec3::splat(chunk_size / chunk_generator.num_voxels as f32)),
+    ));
+    commands.spawn((
+        Name::new("MarchingCubesMesh2"),
+        Mesh3d(meshes.add(chunk_generator.generate_chunk(IVec3::new(1, 0, 0)))),
+        MeshMaterial3d(materials.add(Color::from(tailwind::EMERALD_500))),
+        Transform::from_translation(
+            Vec3::splat(-chunk_size / 2.0) + Vec3::new(chunk_size, 0.0, 0.0),
+        )
+        .with_scale(Vec3::splat(chunk_size / chunk_generator.num_voxels as f32)),
     ));
 }
