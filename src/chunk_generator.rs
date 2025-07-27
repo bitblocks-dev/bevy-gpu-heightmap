@@ -41,7 +41,7 @@ impl<T: Default> Default for ChunkGenerator<T> {
 }
 
 impl<T: TerrainSampler> ChunkGenerator<T> {
-    fn voxel_scale(&self) -> f32 {
+    pub fn voxel_size(&self) -> f32 {
         self.chunk_size / self.num_voxels as f32
     }
 
@@ -58,11 +58,11 @@ impl<T: TerrainSampler> ChunkGenerator<T> {
     }
 
     fn coord_to_local(&self, voxel_id: IVec3) -> Vec3 {
-        voxel_id.as_vec3() * self.voxel_scale()
+        voxel_id.as_vec3() * self.voxel_size()
     }
 
     fn coord_to_world(&self, chunk_id: IVec3, voxel_id: IVec3) -> Vec3 {
-        (chunk_id * self.num_voxels + voxel_id).as_vec3() * self.voxel_scale()
+        (chunk_id * self.num_voxels + voxel_id).as_vec3() * self.voxel_size()
     }
 
     fn index_from_coord(&self, voxel_id: IVec3) -> usize {
