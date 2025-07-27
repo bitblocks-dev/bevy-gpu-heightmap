@@ -62,16 +62,30 @@ pub struct NoiseHeightSampler(pub fastnoise_lite::FastNoiseLite);
 
 impl HeightSampler for NoiseHeightSampler {
     fn sample_height<T>(&self, context: SampleContext<T>) -> f32 {
-        self.0.get_noise_3d(
-            context.world_position.x,
-            context.world_position.y,
-            context.world_position.z,
-        ) * 0.5
+        self.0
+            .get_noise_2d(context.world_position.x, context.world_position.z)
+            * 0.5
             + 0.5
     }
 }
 
 impl Default for NoiseHeightSampler {
+    fn default() -> Self {
+        Self(fastnoise_lite::FastNoiseLite::new())
+    }
+}
+
+#[cfg(feature = "noise_sampler")]
+pub struct NoiseRadiusSampler(pub fastnoise_lite::FastNoiseLite);
+
+impl HeightSampler for NoiseRadiusSampler {
+    fn sample_height<T>(&self, context: SampleContext<T>) -> f32 {
+        let normal = context.world_position.normalize();
+        self.0.get_noise_3d(normal.x, normal.y, normal.z) * 0.5 + 0.5
+    }
+}
+
+impl Default for NoiseRadiusSampler {
     fn default() -> Self {
         Self(fastnoise_lite::FastNoiseLite::new())
     }
