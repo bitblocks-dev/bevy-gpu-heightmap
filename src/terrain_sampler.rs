@@ -3,9 +3,7 @@ use bevy::prelude::*;
 use crate::chunk_generator::SampleContext;
 
 pub trait DensitySampler {
-    fn sample_density(&self, context: SampleContext<Self>) -> f32
-    where
-        Self: Sized;
+    fn sample_density<T>(&self, context: SampleContext<T>) -> f32;
 }
 
 pub struct BoxDensitySampler {
@@ -15,7 +13,7 @@ pub struct BoxDensitySampler {
 }
 
 impl DensitySampler for BoxDensitySampler {
-    fn sample_density(&self, context: SampleContext<Self>) -> f32 {
+    fn sample_density<T>(&self, context: SampleContext<T>) -> f32 {
         let position = context.world_position - self.center;
         let position = self.rotation * position;
         let distance = position.abs();
@@ -39,7 +37,7 @@ impl Default for BoxDensitySampler {
 pub struct NoiseDensitySampler(pub fastnoise_lite::FastNoiseLite);
 
 impl DensitySampler for NoiseDensitySampler {
-    fn sample_density(&self, context: SampleContext<Self>) -> f32 {
+    fn sample_density<T>(&self, context: SampleContext<T>) -> f32 {
         self.0.get_noise_3d(
             context.world_position.x,
             context.world_position.y,
