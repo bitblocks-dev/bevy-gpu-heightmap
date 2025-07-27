@@ -1,5 +1,5 @@
 [package]
-name = "marching-cubes"
+name = "bevy-marching-cubes"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,3 +8,7 @@ bevy = { version = "0.14.1", features = ["wayland"] }
 bevy-inspector-egui = "0.25.1"
 bevy_panorbit_camera = "0.19.1"
 fastnoise-lite = "1.1.1"
+
+[lib]
+name = "bevy-marching-cubes"
+path = "src/lib.rs"
