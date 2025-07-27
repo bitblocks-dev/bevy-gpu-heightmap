@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use fastnoise_lite::FastNoiseLite;
 
 pub trait TerrainSampler {
     fn sample_density(&self, position: Vec3) -> f32;
@@ -32,7 +31,8 @@ impl Default for BoxTerrainSampler {
     }
 }
 
-pub struct NoiseTerrainSampler(pub FastNoiseLite);
+#[cfg(feature = "noise_sampler")]
+pub struct NoiseTerrainSampler(pub fastnoise_lite::FastNoiseLite);
 
 impl TerrainSampler for NoiseTerrainSampler {
     fn sample_density(&self, position: Vec3) -> f32 {
@@ -42,6 +42,6 @@ impl TerrainSampler for NoiseTerrainSampler {
 
 impl Default for NoiseTerrainSampler {
     fn default() -> Self {
-        Self(FastNoiseLite::new())
+        Self(fastnoise_lite::FastNoiseLite::new())
     }
 }

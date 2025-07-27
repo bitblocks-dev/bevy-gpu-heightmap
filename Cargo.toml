@@ -3,11 +3,20 @@ name = "bevy-marching-cubes"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+noise_sampler = ["dep:fastnoise-lite"]
+
 [dependencies]
-bevy = { version = "0.14.1", features = ["wayland"] }
+bevy = { version = "0.14.1", default-features = false, features = [
+	"bevy_render",
+] }
+fastnoise-lite = { version = "1.1.1", optional = true }
+
+[dev-dependencies]
+bevy = "0.14.1"
 bevy-inspector-egui = "0.25.1"
 bevy_panorbit_camera = "0.19.1"
-fastnoise-lite = "1.1.1"
 
 [lib]
 name = "bevy_marching_cubes"
