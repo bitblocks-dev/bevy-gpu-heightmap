@@ -1,6 +1,10 @@
+use std::any::type_name;
+use std::fmt::{Debug, Formatter};
+
 use crate::chunk_generator::SampleContext;
 use crate::terrain_sampler::DensitySampler;
 
+#[derive(Debug)]
 pub struct HeightDensitySampler<T>(pub T);
 
 impl<H: HeightSampler> DensitySampler for HeightDensitySampler<H> {
@@ -12,6 +16,7 @@ impl<H: HeightSampler> DensitySampler for HeightDensitySampler<H> {
     }
 }
 
+#[derive(Debug)]
 pub struct RadiusDensitySampler<T>(pub T);
 
 impl<H: HeightSampler> DensitySampler for RadiusDensitySampler<H> {
@@ -60,6 +65,12 @@ pub trait HeightSampler {
 #[cfg(feature = "noise_sampler")]
 pub struct NoiseHeightSampler(pub fastnoise_lite::FastNoiseLite);
 
+impl Debug for NoiseHeightSampler {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(type_name::<Self>()).finish()
+    }
+}
+
 impl HeightSampler for NoiseHeightSampler {
     fn sample_height<T>(&self, context: SampleContext<T>) -> f32 {
         self.0
@@ -78,6 +89,12 @@ impl Default for NoiseHeightSampler {
 #[cfg(feature = "noise_sampler")]
 pub struct NoiseRadiusSampler(pub fastnoise_lite::FastNoiseLite);
 
+impl Debug for NoiseRadiusSampler {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(type_name::<Self>()).finish()
+    }
+}
+
 impl HeightSampler for NoiseRadiusSampler {
     fn sample_height<T>(&self, context: SampleContext<T>) -> f32 {
         let normal = context.world_position.normalize();
@@ -91,6 +108,7 @@ impl Default for NoiseRadiusSampler {
     }
 }
 
+#[derive(Debug)]
 pub struct ScaleHeightSampler<T>(pub T, pub f32);
 
 impl<H: HeightSampler> HeightSampler for ScaleHeightSampler<H> {
@@ -99,6 +117,7 @@ impl<H: HeightSampler> HeightSampler for ScaleHeightSampler<H> {
     }
 }
 
+#[derive(Debug)]
 pub struct OffsetHeightSampler<T>(pub T, pub f32);
 
 impl<H: HeightSampler> HeightSampler for OffsetHeightSampler<H> {

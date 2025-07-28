@@ -1,3 +1,6 @@
+use std::any::type_name;
+use std::fmt::{Debug, Formatter};
+
 use bevy::prelude::*;
 
 use crate::chunk_generator::SampleContext;
@@ -6,6 +9,7 @@ pub trait DensitySampler {
     fn sample_density<T>(&self, context: SampleContext<T>) -> f32;
 }
 
+#[derive(Debug)]
 pub struct BoxDensitySampler {
     pub center: Vec3,
     pub size: Vec3,
@@ -35,6 +39,12 @@ impl Default for BoxDensitySampler {
 
 #[cfg(feature = "noise_sampler")]
 pub struct NoiseDensitySampler(pub fastnoise_lite::FastNoiseLite);
+
+impl Debug for NoiseDensitySampler {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(type_name::<Self>()).finish()
+    }
+}
 
 impl DensitySampler for NoiseDensitySampler {
     fn sample_density<T>(&self, context: SampleContext<T>) -> f32 {
