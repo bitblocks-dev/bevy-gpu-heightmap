@@ -12,8 +12,9 @@ height_sampler = []
 bevy = { version = "0.16.0", default-features = false, features = [
 	"bevy_render",
 ] }
-wgpu = "24.0.0"
 fastnoise-lite = { version = "1.1.1", optional = true }
+bevy_app_compute = "0.16.0"
+bytemuck = "1.23.1"
 
 [dev-dependencies]
 bevy = "0.16.0"

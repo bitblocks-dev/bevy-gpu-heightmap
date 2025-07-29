@@ -19,21 +19,24 @@ var<storage, read> densities: array<f32>;
 var<uniform> num_voxels_per_axis: u32;
 
 @group(0) @binding(2)
-var<uniform> chunk_size: f32;
+var<uniform> num_samples_per_axis: u32;
 
 @group(0) @binding(3)
-var<uniform> surface_threshold: f32;
+var<uniform> chunk_size: f32;
 
 @group(0) @binding(4)
-var<storage, read_write> out_vertices: array<Vertex>;
+var<uniform> surface_threshold: f32;
 
 @group(0) @binding(5)
-var<storage, read_write> out_vertices_len: atomic<u32>;
+var<storage, read_write> out_vertices: array<Vertex>;
 
 @group(0) @binding(6)
-var<storage, read_write> out_triangles: array<Triangle>;
+var<storage, read_write> out_vertices_len: atomic<u32>;
 
 @group(0) @binding(7)
+var<storage, read_write> out_triangles: array<Triangle>;
+
+@group(0) @binding(8)
 var<storage, read_write> out_triangles_len: atomic<u32>;
 
 fn coord_to_world(coord: vec3<i32>) -> vec3<f32> {
@@ -41,8 +44,8 @@ fn coord_to_world(coord: vec3<i32>) -> vec3<f32> {
 }
 
 fn sample_density(coord: vec3<i32>) -> f32 {
-	let num_samples_per_axis = i32(num_voxels_per_axis) + 1;
-	return densities[coord.z * num_samples_per_axis * num_samples_per_axis + coord.y * num_samples_per_axis + coord.x];
+	let shifted_coord = coord + vec3<i32>(1, 1, 1); // Shift to account for the fact that we sample from the next chunk over too for normals
+	return densities[shifted_coord.x * i32(num_samples_per_axis) * i32(num_samples_per_axis) + shifted_coord.y * i32(num_samples_per_axis) + shifted_coord.z];
 }
 
 fn calculate_normal(coord: vec3<i32>) -> vec3<f32> {
