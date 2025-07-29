@@ -56,7 +56,7 @@ fn setup(
 
     let chunk_generator = ChunkGenerator {
         surface_threshold: 0.5,
-        num_voxels: 32,
+        num_voxels_per_axis: 32,
         chunk_size: 8.0,
         terrain_sampler: HeightDensitySampler(NoiseHeightSampler(noise)),
     };
