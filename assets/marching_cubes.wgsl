@@ -13,7 +13,7 @@ struct Triangle {
 }
 
 @group(0) @binding(0)
-var<storage, read_write> densities: array<f32>;
+var<storage, read> densities: array<f32>;
 
 @group(0) @binding(1)
 var<uniform> num_voxels_per_axis: u32;
