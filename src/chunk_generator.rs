@@ -112,17 +112,29 @@ impl<
         chunk_loaders: Query<&ChunkLoader, Changed<ChunkLoader>>,
     ) {
         for chunk_loader in chunk_loaders.iter() {
+            let mut load_order = Vec::new();
             for x in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
                 for y in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
                     for z in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
-                        let chunk_position = chunk_loader.position + IVec3::new(x, y, z);
-
-                        if !chunk_loading.loaded_chunks.contains(&chunk_position) {
-                            chunk_loading.loaded_chunks.insert(chunk_position);
-                            chunk_loading.chunks_to_load.push(chunk_position);
-                            info!("Queued chunk for loading: {chunk_position:?}");
-                        }
+                        load_order.push(Vec3::new(x as f32, y as f32, z as f32));
                     }
+                }
+            }
+
+            load_order.sort_by(|a, b| {
+                // Why does copilot insist on using length_squared() here? Square roots aren't expensive
+                // Anyway, sort backwards so that the closest chunks are loaded first
+                b.length_squared()
+                    .partial_cmp(&a.length_squared())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            for offset in load_order {
+                let chunk_position = chunk_loader.position + offset.as_ivec3();
+                if !chunk_loading.loaded_chunks.contains(&chunk_position) {
+                    chunk_loading.loaded_chunks.insert(chunk_position);
+                    chunk_loading.chunks_to_load.push(chunk_position);
+                    // info!("Queued chunk for loading: {chunk_position:?}");
                 }
             }
         }
@@ -144,7 +156,7 @@ impl<
             return;
         };
 
-        info!("Finished chunk: {chunk_position:?}");
+        // info!("Finished chunk: {chunk_position:?}");
 
         let num_vertices = compute_worker.read::<u32>("out_vertices_len") as usize;
         let vertices: Vec<Vertex> = compute_worker
@@ -199,30 +211,42 @@ impl<
             return;
         }
 
-        let Some(chunk_position) = chunk_loading.chunks_to_load.pop() else {
-            return;
-        };
+        while let Some(chunk_position) = chunk_loading.chunks_to_load.pop() {
+            chunk_loading.current_chunk = Some(chunk_position);
 
-        chunk_loading.current_chunk = Some(chunk_position);
-
-        let mut densities = Vec::<f32>::new();
-        for x in 0..generator.num_samples_per_axis() {
-            for y in 0..generator.num_samples_per_axis() {
-                for z in 0..generator.num_samples_per_axis() {
-                    densities.push(
-                        generator.sample_density(
+            let mut all_1 = true;
+            let mut all_0 = true;
+            let mut densities = Vec::<f32>::new();
+            for x in 0..generator.num_samples_per_axis() {
+                for y in 0..generator.num_samples_per_axis() {
+                    for z in 0..generator.num_samples_per_axis() {
+                        let sample = generator.sample_density(
                             chunk_position,
                             IVec3::new(x as i32, y as i32, z as i32),
-                        ),
-                    );
+                        );
+                        densities.push(sample);
+
+                        if sample != 1.0 {
+                            all_1 = false;
+                        }
+                        if sample != 0.0 {
+                            all_0 = false;
+                        }
+                    }
                 }
             }
-        }
 
-        compute_worker.write_slice("densities", densities.as_slice());
-        compute_worker.write("out_vertices_len", &0u32);
-        compute_worker.write("out_triangles_len", &0u32);
-        compute_worker.execute();
+            if all_1 || all_0 {
+                chunk_loading.current_chunk = None;
+                continue;
+            }
+
+            compute_worker.write_slice("densities", densities.as_slice());
+            compute_worker.write("out_vertices_len", &0u32);
+            compute_worker.write("out_triangles_len", &0u32);
+            compute_worker.execute();
+            break;
+        }
     }
 }
 
