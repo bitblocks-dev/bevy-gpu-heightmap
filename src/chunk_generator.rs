@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
@@ -313,6 +315,7 @@ impl<T: Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
                     "out_triangles_len",
                 ],
             )
+            .asynchronous(Some(Duration::from_millis(1000)))
             .one_shot()
             .build()
     }
