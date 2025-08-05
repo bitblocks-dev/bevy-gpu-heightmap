@@ -5,8 +5,6 @@ use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
-use crate::terrain_sampler::DensitySampler;
-
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct Vertex {
@@ -29,10 +27,19 @@ pub struct ChunkGenerator<T> {
     pub surface_threshold: f32,
     pub num_voxels_per_axis: u32,
     pub chunk_size: f32,
-    pub terrain_sampler: T,
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> ChunkGenerator<T> {
+    pub fn new(surface_threshold: f32, num_voxels_per_axis: u32, chunk_size: f32) -> Self {
+        Self {
+            surface_threshold,
+            num_voxels_per_axis,
+            chunk_size,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn num_samples_per_axis(&self) -> u32 {
         self.num_voxels_per_axis + 3 // We sample the next chunk over too for normals
     }
@@ -44,6 +51,10 @@ impl<T> ChunkGenerator<T> {
     pub fn max_num_triangles(&self) -> u64 {
         (self.num_voxels_per_axis as u64).pow(3) * 5
     }
+
+    pub fn voxel_size(&self) -> f32 {
+        self.chunk_size / self.num_voxels_per_axis as f32
+    }
 }
 
 pub struct SampleContext<'a, T> {
@@ -51,29 +62,6 @@ pub struct SampleContext<'a, T> {
     pub local_position: Vec3,
     pub generator: &'a ChunkGenerator<T>,
 }
-
-impl<T: DensitySampler> ChunkGenerator<T> {
-    pub fn voxel_size(&self) -> f32 {
-        self.chunk_size / self.num_voxels_per_axis as f32
-    }
-
-    pub fn sample_density(&self, chunk_id: IVec3, sample_id: IVec3) -> f32 {
-        self.terrain_sampler.sample_density(SampleContext {
-            world_position: self.coord_to_world(chunk_id, sample_id),
-            local_position: self.coord_to_local(sample_id),
-            generator: self,
-        })
-    }
-
-    fn coord_to_local(&self, voxel_id: IVec3) -> Vec3 {
-        voxel_id.as_vec3() * self.voxel_size()
-    }
-
-    fn coord_to_world(&self, chunk_id: IVec3, voxel_id: IVec3) -> Vec3 {
-        (chunk_id * self.num_voxels_per_axis as i32 + voxel_id).as_vec3() * self.voxel_size()
-    }
-}
-
 pub struct MarchingCubesPlugin<Sampler, Material> {
     _marker: std::marker::PhantomData<(Sampler, Material)>,
 }
@@ -86,10 +74,8 @@ impl<Sampler, Material> Default for MarchingCubesPlugin<Sampler, Material> {
     }
 }
 
-impl<
-        Sampler: DensitySampler + Send + Sync + 'static,
-        Material: Asset + bevy::prelude::Material,
-    > MarchingCubesPlugin<Sampler, Material>
+impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::prelude::Material>
+    MarchingCubesPlugin<Sampler, Material>
 {
     fn update_chunk_loaders(
         generator: Res<ChunkGenerator<Sampler>>,
@@ -211,49 +197,23 @@ impl<
             return;
         }
 
-        while let Some(chunk_position) = chunk_loading.chunks_to_load.pop() {
-            chunk_loading.current_chunk = Some(chunk_position);
+        let Some(chunk_position) = chunk_loading.chunks_to_load.pop() else {
+            return;
+        };
 
-            let mut all_1 = true;
-            let mut all_0 = true;
-            let mut densities = Vec::<f32>::new();
-            for x in 0..generator.num_samples_per_axis() {
-                for y in 0..generator.num_samples_per_axis() {
-                    for z in 0..generator.num_samples_per_axis() {
-                        let sample = generator.sample_density(
-                            chunk_position,
-                            IVec3::new(x as i32, y as i32, z as i32),
-                        );
-                        densities.push(sample);
+        chunk_loading.current_chunk = Some(chunk_position);
 
-                        if sample != 1.0 {
-                            all_1 = false;
-                        }
-                        if sample != 0.0 {
-                            all_0 = false;
-                        }
-                    }
-                }
-            }
-
-            if all_1 || all_0 {
-                chunk_loading.current_chunk = None;
-                continue;
-            }
-
-            compute_worker.write_slice("densities", densities.as_slice());
-            compute_worker.write("out_vertices_len", &0u32);
-            compute_worker.write("out_triangles_len", &0u32);
-            compute_worker.execute();
-            break;
-        }
+        compute_worker.write("chunk_position", &chunk_position);
+        let empty_densities = vec![0.0f32; generator.num_samples_per_axis().pow(3) as usize];
+        compute_worker.write_slice("densities", empty_densities.as_slice());
+        compute_worker.write("out_vertices_len", &0u32);
+        compute_worker.write("out_triangles_len", &0u32);
+        compute_worker.execute();
     }
 }
 
-impl<
-        Sampler: DensitySampler + Send + Sync + 'static,
-        Material: Asset + bevy::prelude::Material,
-    > Plugin for MarchingCubesPlugin<Sampler, Material>
+impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::prelude::Material>
+    Plugin for MarchingCubesPlugin<Sampler, Material>
 {
     fn build(&self, app: &mut App) {
         app.add_plugins((
@@ -290,7 +250,7 @@ struct MarchingCubesComputeWorker<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
+impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
     fn build(world: &mut World) -> AppComputeWorker<Self> {
         let Some(generator) = world.get_resource::<ChunkGenerator<T>>() else {
             panic!(
@@ -304,9 +264,13 @@ impl<T: Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
         let surface_threshold = generator.surface_threshold;
         let max_num_vertices = generator.max_num_vertices();
         let max_num_triangles = generator.max_num_triangles();
-        let dispatch_size = (num_voxels_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+        let sampler_dispatch_size =
+            (num_samples_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+        let marching_cubes_dispatch_size =
+            (num_voxels_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
         AppComputeWorkerBuilder::new(world)
+            .add_uniform("chunk_position", &IVec3::ZERO)
             .add_empty_rw_storage(
                 "densities",
                 size_of::<f32>() as u64 * num_samples_per_axis.pow(3) as u64,
@@ -325,8 +289,26 @@ impl<T: Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
                 size_of::<Triangle>() as u64 * max_num_triangles,
             )
             .add_empty_staging("out_triangles_len", size_of::<u32>() as u64)
+            .add_pass::<T>(
+                [
+                    sampler_dispatch_size,
+                    sampler_dispatch_size,
+                    sampler_dispatch_size,
+                ],
+                &[
+                    "chunk_position",
+                    "num_voxels_per_axis",
+                    "num_samples_per_axis",
+                    "chunk_size",
+                    "densities",
+                ],
+            )
             .add_pass::<MarchingCubesShader>(
-                [dispatch_size, dispatch_size, dispatch_size],
+                [
+                    marching_cubes_dispatch_size,
+                    marching_cubes_dispatch_size,
+                    marching_cubes_dispatch_size,
+                ],
                 &[
                     "densities",
                     "num_voxels_per_axis",

@@ -43,9 +43,13 @@ fn coord_to_world(coord: vec3<i32>) -> vec3<f32> {
 	return vec3<f32>(coord) / vec3<f32>(num_voxels_per_axis) * chunk_size;
 }
 
-fn sample_density(coord: vec3<i32>) -> f32 {
+fn density_index(coord: vec3<i32>) -> u32 {
 	let shifted_coord = coord + vec3<i32>(1, 1, 1); // Shift to account for the fact that we sample from the next chunk over too for normals
-	return densities[shifted_coord.x * i32(num_samples_per_axis) * i32(num_samples_per_axis) + shifted_coord.y * i32(num_samples_per_axis) + shifted_coord.z];
+	return u32(shifted_coord.x * i32(num_samples_per_axis) * i32(num_samples_per_axis) + shifted_coord.y * i32(num_samples_per_axis) + shifted_coord.z);
+}
+
+fn sample_density(coord: vec3<i32>) -> f32 {
+	return densities[density_index(coord)];
 }
 
 fn calculate_normal(coord: vec3<i32>) -> vec3<f32> {

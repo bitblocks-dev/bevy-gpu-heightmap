@@ -4,8 +4,7 @@ use bevy::prelude::*;
 use bevy_marching_cubes::chunk_generator::{
     ChunkGenerator, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
 };
-use bevy_marching_cubes::terrain_sampler::NoiseDensitySampler;
-use fastnoise_lite::FastNoiseLite;
+use bevy_marching_cubes::{ComputeShader, ShaderRef};
 
 fn main() {
     App::new()
@@ -13,27 +12,24 @@ fn main() {
             DefaultPlugins,
             WireframePlugin::default(),
             bevy_panorbit_camera::PanOrbitCameraPlugin,
-            MarchingCubesPlugin::<ComputeSampler, StandardMaterial>::default(),
+            MarchingCubesPlugin::<MyComputeSampler, StandardMaterial>::default(),
         ))
         .insert_resource(WireframeConfig {
             global: true,
             default_color: css::WHITE.into(),
         })
-        .insert_resource(ChunkGenerator {
-            surface_threshold: 0.5,
-            num_voxels_per_axis: 32,
-            chunk_size: 8.0,
-            terrain_sampler: NoiseDensitySampler({
-                let mut noise = FastNoiseLite::with_seed(1);
-                noise.set_frequency(Some(0.2));
-                noise
-            }),
-        })
+        .insert_resource(ChunkGenerator::<MyComputeSampler>::new(0.0, 32, 8.0))
         .add_systems(Startup, setup)
         .run();
 }
 
-type ComputeSampler = NoiseDensitySampler;
+#[derive(TypePath)]
+struct MyComputeSampler;
+impl ComputeShader for MyComputeSampler {
+    fn shader() -> ShaderRef {
+        "sample.wgsl".into()
+    }
+}
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     commands.spawn((
@@ -66,7 +62,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>
         loading_radius: 1,
     });
 
-    commands.insert_resource(ChunkMaterial::<ComputeSampler, StandardMaterial>::new(
+    commands.insert_resource(ChunkMaterial::<MyComputeSampler, StandardMaterial>::new(
         materials.add(Color::from(tailwind::EMERALD_500)),
     ));
 }
