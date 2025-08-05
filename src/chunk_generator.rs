@@ -144,20 +144,10 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
 
         // info!("Finished chunk: {chunk_position:?}");
 
-        let num_vertices = compute_worker.read::<u32>("out_vertices_len") as usize;
-        let vertices: Vec<Vertex> = compute_worker
-            .read_vec("out_vertices")
-            .iter()
-            .take(num_vertices)
-            .cloned()
-            .collect();
-        let num_triangles = compute_worker.read::<u32>("out_triangles_len") as usize;
-        let triangles: Vec<Triangle> = compute_worker
-            .read_vec("out_triangles")
-            .iter()
-            .take(num_triangles)
-            .cloned()
-            .collect();
+        let vertices =
+            Self::read_vec::<Vertex>(&compute_worker, "out_vertices", "out_vertices_len");
+        let triangles =
+            Self::read_vec::<Triangle>(&compute_worker, "out_triangles", "out_triangles_len");
 
         let mesh = Mesh::new(
             bevy::render::mesh::PrimitiveTopology::TriangleList,
@@ -186,6 +176,17 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
         ));
 
         chunk_loading.current_chunk = None;
+    }
+
+    fn read_vec<T: Pod + Zeroable>(
+        worker: &AppComputeWorker<MarchingCubesComputeWorker<Sampler>>,
+        name: &str,
+        len_name: &str,
+    ) -> Vec<T> {
+        let len = worker.read::<u32>(len_name) as usize;
+        let size = std::mem::size_of::<T>();
+        let bytes = worker.read_raw(name);
+        bytemuck::cast_slice::<u8, T>(&bytes[..len * size]).to_vec()
     }
 
     fn start_chunks(
