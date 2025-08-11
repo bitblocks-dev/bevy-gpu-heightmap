@@ -5,6 +5,8 @@ use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
+use crate::Chunk;
+
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct Vertex {
@@ -79,7 +81,10 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
 {
     fn update_chunk_loaders(
         generator: Res<ChunkGenerator<Sampler>>,
-        mut chunk_loaders: Query<(&mut ChunkLoader, &GlobalTransform), Changed<GlobalTransform>>,
+        mut chunk_loaders: Query<
+            (&mut ChunkLoader<Sampler>, &GlobalTransform),
+            Changed<GlobalTransform>,
+        >,
     ) {
         for (mut chunk_loader, transform) in chunk_loaders.iter_mut() {
             let chunk_position = (transform.translation() / generator.chunk_size)
@@ -95,7 +100,7 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
 
     fn queue_chunks(
         mut chunk_loading: ResMut<ChunkLoading<Sampler>>,
-        chunk_loaders: Query<&ChunkLoader, Changed<ChunkLoader>>,
+        chunk_loaders: Query<&ChunkLoader<Sampler>, Changed<ChunkLoader<Sampler>>>,
     ) {
         for chunk_loader in chunk_loaders.iter() {
             let mut load_order = Vec::new();
@@ -173,6 +178,7 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material.material.clone()),
             Transform::from_translation(chunk_position.as_vec3() * generator.chunk_size),
+            Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
         ));
 
         chunk_loading.current_chunk = None;
@@ -217,23 +223,28 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
     Plugin for MarchingCubesPlugin<Sampler, Material>
 {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            AppComputePlugin,
-            AppComputeWorkerPlugin::<MarchingCubesComputeWorker<Sampler>>::default(),
-        ))
-        .add_systems(
-            Update,
-            ((
-                Self::update_chunk_loaders,
-                Self::finish_chunks,
-                Self::queue_chunks,
-                Self::start_chunks,
+        if !app.is_plugin_added::<AppComputePlugin>() {
+            app.add_plugins(AppComputePlugin);
+        }
+
+        app.add_plugins(AppComputeWorkerPlugin::<MarchingCubesComputeWorker<Sampler>>::default())
+            .add_systems(
+                Update,
+                (
+                    Self::update_chunk_loaders,
+                    Self::finish_chunks,
+                    Self::queue_chunks,
+                    Self::start_chunks,
+                )
+                    .chain()
+                    .in_set(ChunkGenSystems),
             )
-                .chain(),),
-        )
-        .init_resource::<ChunkLoading<Sampler>>();
+            .init_resource::<ChunkLoading<Sampler>>();
     }
 }
+
+#[derive(SystemSet, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct ChunkGenSystems;
 
 const WORKGROUP_SIZE: u32 = 8;
 
@@ -348,16 +359,18 @@ impl<T> Default for ChunkLoading<T> {
 }
 
 #[derive(Component, Default, Debug)]
-pub struct ChunkLoader {
+pub struct ChunkLoader<T> {
     pub position: IVec3,
     pub loading_radius: i32,
+    _marker: std::marker::PhantomData<T>,
 }
 
-impl ChunkLoader {
+impl<T> ChunkLoader<T> {
     pub fn new(loading_radius: i32) -> Self {
         Self {
             position: IVec3::ZERO,
             loading_radius,
+            _marker: std::marker::PhantomData,
         }
     }
 }
