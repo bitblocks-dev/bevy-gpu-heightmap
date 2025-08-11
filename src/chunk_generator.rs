@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::platform::collections::HashSet;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -26,9 +26,12 @@ struct Triangle {
 
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkGenerator<T> {
-    pub surface_threshold: f32,
-    pub num_voxels_per_axis: u32,
-    pub chunk_size: f32,
+    surface_threshold: f32,
+    num_voxels_per_axis: u32,
+    chunk_size: f32,
+    loaded_chunks: HashMap<IVec3, LoadState>,
+    chunks_to_load: Vec<IVec3>,
+    current_chunk: Option<IVec3>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -38,6 +41,9 @@ impl<T> ChunkGenerator<T> {
             surface_threshold,
             num_voxels_per_axis,
             chunk_size,
+            loaded_chunks: HashMap::default(),
+            chunks_to_load: Vec::new(),
+            current_chunk: None,
             _marker: std::marker::PhantomData,
         }
     }
@@ -57,6 +63,39 @@ impl<T> ChunkGenerator<T> {
     pub fn voxel_size(&self) -> f32 {
         self.chunk_size / self.num_voxels_per_axis as f32
     }
+
+    pub fn is_chunk_marked(&self, chunk_position: &IVec3) -> bool {
+        self.loaded_chunks.contains_key(chunk_position)
+    }
+
+    pub fn is_chunk_generated(&self, chunk_position: &IVec3) -> bool {
+        matches!(
+            self.loaded_chunks.get(chunk_position),
+            Some(LoadState::Finished)
+        )
+    }
+
+    pub fn is_chunk_with_position_marked(&self, position: Vec3) -> bool {
+        self.is_chunk_marked(&self.position_to_chunk(position))
+    }
+
+    pub fn is_chunk_with_position_generated(&self, position: Vec3) -> bool {
+        self.is_chunk_generated(&self.position_to_chunk(position))
+    }
+
+    pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
+        (position / self.chunk_size).floor().as_ivec3()
+    }
+
+    pub fn chunk_to_position(&self, chunk: IVec3) -> Vec3 {
+        chunk.as_vec3() * self.chunk_size
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum LoadState {
+    Loading,
+    Finished,
 }
 
 pub struct SampleContext<'a, T> {
@@ -99,7 +138,7 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
     }
 
     fn queue_chunks(
-        mut chunk_loading: ResMut<ChunkLoading<Sampler>>,
+        mut generator: ResMut<ChunkGenerator<Sampler>>,
         chunk_loaders: Query<&ChunkLoader<Sampler>, Changed<ChunkLoader<Sampler>>>,
     ) {
         for chunk_loader in chunk_loaders.iter() {
@@ -122,9 +161,11 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
 
             for offset in load_order {
                 let chunk_position = chunk_loader.position + offset.as_ivec3();
-                if !chunk_loading.loaded_chunks.contains(&chunk_position) {
-                    chunk_loading.loaded_chunks.insert(chunk_position);
-                    chunk_loading.chunks_to_load.push(chunk_position);
+                if !generator.is_chunk_marked(&chunk_position) {
+                    generator
+                        .loaded_chunks
+                        .insert(chunk_position, LoadState::Loading);
+                    generator.chunks_to_load.push(chunk_position);
                     // info!("Queued chunk for loading: {chunk_position:?}");
                 }
             }
@@ -135,15 +176,14 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
         compute_worker: Res<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
-        mut chunk_loading: ResMut<ChunkLoading<Sampler>>,
-        generator: Res<ChunkGenerator<Sampler>>,
+        mut generator: ResMut<ChunkGenerator<Sampler>>,
         material: Res<ChunkMaterial<Sampler, Material>>,
     ) {
         if !compute_worker.ready() {
             return;
         };
 
-        let Some(chunk_position) = chunk_loading.current_chunk else {
+        let Some(chunk_position) = generator.current_chunk else {
             return;
         };
 
@@ -177,11 +217,14 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
             Name::new(format!("Chunk {chunk_position:?}")),
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material.material.clone()),
-            Transform::from_translation(chunk_position.as_vec3() * generator.chunk_size),
+            Transform::from_translation(generator.chunk_to_position(chunk_position)),
             Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
         ));
 
-        chunk_loading.current_chunk = None;
+        generator.current_chunk = None;
+        generator
+            .loaded_chunks
+            .insert(chunk_position, LoadState::Finished);
     }
 
     fn read_vec<T: Pod + Zeroable>(
@@ -197,18 +240,17 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
 
     fn start_chunks(
         mut compute_worker: ResMut<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
-        mut chunk_loading: ResMut<ChunkLoading<Sampler>>,
-        generator: Res<ChunkGenerator<Sampler>>,
+        mut generator: ResMut<ChunkGenerator<Sampler>>,
     ) {
-        if chunk_loading.current_chunk.is_some() {
+        if generator.current_chunk.is_some() {
             return;
         }
 
-        let Some(chunk_position) = chunk_loading.chunks_to_load.pop() else {
+        let Some(chunk_position) = generator.chunks_to_load.pop() else {
             return;
         };
 
-        chunk_loading.current_chunk = Some(chunk_position);
+        generator.current_chunk = Some(chunk_position);
 
         compute_worker.write("chunk_position", &chunk_position);
         let empty_densities = vec![0.0f32; generator.num_samples_per_axis().pow(3) as usize];
@@ -238,8 +280,7 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
                 )
                     .chain()
                     .in_set(ChunkGenSystems),
-            )
-            .init_resource::<ChunkLoading<Sampler>>();
+            );
     }
 }
 
@@ -336,25 +377,6 @@ impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesCo
             .asynchronous(Some(Duration::from_millis(1000)))
             .one_shot()
             .build()
-    }
-}
-
-#[derive(Resource, Debug)]
-struct ChunkLoading<T> {
-    loaded_chunks: HashSet<IVec3>,
-    chunks_to_load: Vec<IVec3>,
-    current_chunk: Option<IVec3>,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> Default for ChunkLoading<T> {
-    fn default() -> Self {
-        Self {
-            loaded_chunks: HashSet::default(),
-            chunks_to_load: Vec::new(),
-            current_chunk: None,
-            _marker: std::marker::PhantomData,
-        }
     }
 }
 
