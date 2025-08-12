@@ -212,6 +212,10 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
             .with_inserted_attribute(
                 Mesh::ATTRIBUTE_NORMAL,
                 vertices.iter().map(|v| v.normal).collect::<Vec<_>>(),
+            )
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_UV_0,
+                vertices.iter().map(|v| v.position.xy()).collect::<Vec<_>>(),
             );
 
             commands.spawn((
