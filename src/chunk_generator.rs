@@ -194,32 +194,34 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
         let triangles =
             Self::read_vec::<Triangle>(&compute_worker, "out_triangles", "out_triangles_len");
 
-        let mesh = Mesh::new(
-            bevy::render::mesh::PrimitiveTopology::TriangleList,
-            bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
-        )
-        .with_inserted_indices(bevy::render::mesh::Indices::U32(
-            triangles
-                .iter()
-                .flat_map(|t| [t.vertex_c, t.vertex_b, t.vertex_a])
-                .collect(),
-        ))
-        .with_inserted_attribute(
-            Mesh::ATTRIBUTE_POSITION,
-            vertices.iter().map(|v| v.position).collect::<Vec<_>>(),
-        )
-        .with_inserted_attribute(
-            Mesh::ATTRIBUTE_NORMAL,
-            vertices.iter().map(|v| v.normal).collect::<Vec<_>>(),
-        );
+        if !vertices.is_empty() && !triangles.is_empty() {
+            let mesh = Mesh::new(
+                bevy::render::mesh::PrimitiveTopology::TriangleList,
+                bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
+            )
+            .with_inserted_indices(bevy::render::mesh::Indices::U32(
+                triangles
+                    .iter()
+                    .flat_map(|t| [t.vertex_c, t.vertex_b, t.vertex_a])
+                    .collect(),
+            ))
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vertices.iter().map(|v| v.position).collect::<Vec<_>>(),
+            )
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_NORMAL,
+                vertices.iter().map(|v| v.normal).collect::<Vec<_>>(),
+            );
 
-        commands.spawn((
-            Name::new(format!("Chunk {chunk_position:?}")),
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(material.material.clone()),
-            Transform::from_translation(generator.chunk_to_position(chunk_position)),
-            Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
-        ));
+            commands.spawn((
+                Name::new(format!("Chunk {chunk_position:?}")),
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material.material.clone()),
+                Transform::from_translation(generator.chunk_to_position(chunk_position)),
+                Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
+            ));
+        }
 
         generator.current_chunk = None;
         generator
