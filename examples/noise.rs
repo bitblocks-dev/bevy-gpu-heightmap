@@ -57,7 +57,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>
         },
     ));
 
-    commands.spawn(ChunkLoader::new(1));
+    commands.spawn(ChunkLoader::<MyComputeSampler>::new(1));
 
     commands.insert_resource(ChunkMaterial::<MyComputeSampler, StandardMaterial>::new(
         materials.add(Color::from(tailwind::EMERALD_500)),
