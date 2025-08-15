@@ -2,9 +2,9 @@ use bevy::color::palettes::{css, tailwind};
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy_marching_cubes::chunk_generator::{
-    ChunkGenerator, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
+    ChunkComputeShader, ChunkGenerator, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
 };
-use bevy_marching_cubes::{ComputeShader, ShaderRef};
+use bevy_marching_cubes::*;
 
 fn main() {
     App::new()
@@ -30,6 +30,7 @@ impl ComputeShader for MyComputeSampler {
         "sample.wgsl".into()
     }
 }
+impl ChunkComputeShader for MyComputeSampler {}
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     commands.spawn((

@@ -115,8 +115,10 @@ impl<Sampler, Material> Default for MarchingCubesPlugin<Sampler, Material> {
     }
 }
 
-impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::prelude::Material>
-    MarchingCubesPlugin<Sampler, Material>
+impl<
+        Sampler: ChunkComputeShader + Send + Sync + 'static,
+        Material: Asset + bevy::prelude::Material,
+    > MarchingCubesPlugin<Sampler, Material>
 {
     fn update_chunk_loaders(
         generator: Res<ChunkGenerator<Sampler>>,
@@ -267,8 +269,10 @@ impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::pre
     }
 }
 
-impl<Sampler: ComputeShader + Send + Sync + 'static, Material: Asset + bevy::prelude::Material>
-    Plugin for MarchingCubesPlugin<Sampler, Material>
+impl<
+        Sampler: ChunkComputeShader + Send + Sync + 'static,
+        Material: Asset + bevy::prelude::Material,
+    > Plugin for MarchingCubesPlugin<Sampler, Material>
 {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<AppComputePlugin>() {
@@ -295,6 +299,16 @@ pub struct ChunkGenSystems;
 
 const WORKGROUP_SIZE: u32 = 8;
 
+pub trait ChunkComputeShader: ComputeShader {
+    fn build_worker_extra<W: ComputeWorker>(_compute_worker: &mut AppComputeWorkerBuilder<W>) {
+        // Default implementation does nothing
+    }
+    fn extra_sample_bindings() -> Vec<&'static str> {
+        // Default implementation returns an empty vector
+        Vec::new()
+    }
+}
+
 #[derive(TypePath)]
 struct MarchingCubesShader;
 
@@ -304,12 +318,16 @@ impl ComputeShader for MarchingCubesShader {
     }
 }
 
+pub type ChunkComputeWorker<Sampler> = AppComputeWorker<MarchingCubesComputeWorker<Sampler>>;
+
 #[derive(Resource)]
-struct MarchingCubesComputeWorker<T> {
+pub struct MarchingCubesComputeWorker<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesComputeWorker<T> {
+impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
+    for MarchingCubesComputeWorker<T>
+{
     fn build(world: &mut World) -> AppComputeWorker<Self> {
         let Some(generator) = world.get_resource::<ChunkGenerator<T>>() else {
             panic!(
@@ -328,7 +346,8 @@ impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesCo
         let marching_cubes_dispatch_size =
             (num_voxels_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
-        AppComputeWorkerBuilder::new(world)
+        let mut worker = AppComputeWorkerBuilder::new(world);
+        worker
             .add_uniform("chunk_position", &IVec3::ZERO)
             .add_empty_rw_storage(
                 "densities",
@@ -355,12 +374,16 @@ impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesCo
                     sampler_dispatch_size,
                 ],
                 &[
-                    "chunk_position",
-                    "num_voxels_per_axis",
-                    "num_samples_per_axis",
-                    "chunk_size",
-                    "densities",
-                ],
+                    &[
+                        "chunk_position",
+                        "num_voxels_per_axis",
+                        "num_samples_per_axis",
+                        "chunk_size",
+                        "densities",
+                    ],
+                    T::extra_sample_bindings().as_slice(),
+                ]
+                .concat(),
             )
             .add_pass::<MarchingCubesShader>(
                 [
@@ -381,8 +404,11 @@ impl<T: ComputeShader + Send + Sync + 'static> ComputeWorker for MarchingCubesCo
                 ],
             )
             .asynchronous(Some(Duration::from_millis(1000)))
-            .one_shot()
-            .build()
+            .one_shot();
+
+        T::build_worker_extra(&mut worker);
+
+        worker.build()
     }
 }
 

@@ -1,6 +1,8 @@
 use bevy::ecs::component::Component;
 use bevy::math::IVec3;
-pub use bevy_app_compute::prelude::{ComputeShader, ShaderRef};
+pub use bevy_app_compute::prelude::{
+    AppComputeWorkerBuilder, ComputeShader, ComputeWorker, ShaderRef,
+};
 
 pub mod chunk_generator;
 
