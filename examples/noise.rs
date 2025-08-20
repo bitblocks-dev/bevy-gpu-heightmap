@@ -18,7 +18,7 @@ fn main() {
             global: true,
             default_color: css::WHITE.into(),
         })
-        .insert_resource(ChunkGenerator::<MyComputeSampler>::new(0.0, 32, 8.0))
+        .insert_resource(ChunkGenerator::<MyComputeSampler>::new(32, 8.0))
         .add_systems(Startup, setup)
         .run();
 }

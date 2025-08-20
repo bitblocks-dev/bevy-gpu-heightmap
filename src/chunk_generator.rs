@@ -29,23 +29,41 @@ pub struct ChunkGenerator<T> {
     surface_threshold: f32,
     num_voxels_per_axis: u32,
     chunk_size: f32,
+    bounds: Option<GenBounds>,
     loaded_chunks: HashMap<IVec3, LoadState>,
     chunks_to_load: Vec<IVec3>,
     current_chunk: Option<IVec3>,
     _marker: std::marker::PhantomData<T>,
 }
 
+#[derive(Debug, Clone)]
+struct GenBounds {
+    min: Vec3,
+    max: Vec3,
+}
+
 impl<T> ChunkGenerator<T> {
-    pub fn new(surface_threshold: f32, num_voxels_per_axis: u32, chunk_size: f32) -> Self {
+    pub fn new(num_voxels_per_axis: u32, chunk_size: f32) -> Self {
         Self {
-            surface_threshold,
+            surface_threshold: 0.0,
             num_voxels_per_axis,
             chunk_size,
+            bounds: None,
             loaded_chunks: HashMap::default(),
             chunks_to_load: Vec::new(),
             current_chunk: None,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    pub fn with_surface_threshold(mut self, surface_threshold: f32) -> Self {
+        self.surface_threshold = surface_threshold;
+        self
+    }
+
+    pub fn with_bounds(mut self, min: Vec3, max: Vec3) -> Self {
+        self.bounds = Some(GenBounds { min, max });
+        self
     }
 
     pub fn num_samples_per_axis(&self) -> u32 {
@@ -64,23 +82,38 @@ impl<T> ChunkGenerator<T> {
         self.chunk_size / self.num_voxels_per_axis as f32
     }
 
-    pub fn is_chunk_marked(&self, chunk_position: &IVec3) -> bool {
-        self.loaded_chunks.contains_key(chunk_position)
+    pub fn is_chunk_marked(&self, chunk_position: IVec3) -> bool {
+        !self.is_chunk_in_bounds(chunk_position) || self.loaded_chunks.contains_key(&chunk_position)
     }
 
-    pub fn is_chunk_generated(&self, chunk_position: &IVec3) -> bool {
-        matches!(
-            self.loaded_chunks.get(chunk_position),
-            Some(LoadState::Finished)
-        )
+    pub fn is_chunk_generated(&self, chunk_position: IVec3) -> bool {
+        !self.is_chunk_in_bounds(chunk_position)
+            || matches!(
+                self.loaded_chunks.get(&chunk_position),
+                Some(LoadState::Finished)
+            )
     }
 
     pub fn is_chunk_with_position_marked(&self, position: Vec3) -> bool {
-        self.is_chunk_marked(&self.position_to_chunk(position))
+        self.is_chunk_marked(self.position_to_chunk(position))
     }
 
     pub fn is_chunk_with_position_generated(&self, position: Vec3) -> bool {
-        self.is_chunk_generated(&self.position_to_chunk(position))
+        self.is_chunk_generated(self.position_to_chunk(position))
+    }
+
+    fn is_chunk_in_bounds(&self, chunk_position: IVec3) -> bool {
+        if let Some(bounds) = &self.bounds {
+            let position = self.chunk_to_position(chunk_position);
+            position.x >= bounds.min.x
+                && position.x <= bounds.max.x
+                && position.y >= bounds.min.y
+                && position.y <= bounds.max.y
+                && position.z >= bounds.min.z
+                && position.z <= bounds.max.z
+        } else {
+            true
+        }
     }
 
     pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
@@ -163,7 +196,7 @@ impl<
 
             for offset in load_order {
                 let chunk_position = chunk_loader.position + offset.as_ivec3();
-                if !generator.is_chunk_marked(&chunk_position) {
+                if !generator.is_chunk_marked(chunk_position) {
                     generator
                         .loaded_chunks
                         .insert(chunk_position, LoadState::Loading);
