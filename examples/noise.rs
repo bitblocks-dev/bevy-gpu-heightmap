@@ -2,7 +2,7 @@ use bevy::color::palettes::{css, tailwind};
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy_marching_cubes::chunk_generator::{
-    ChunkComputeShader, ChunkGenerator, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
+    ChunkComputeShader, ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
 };
 use bevy_marching_cubes::*;
 
@@ -18,7 +18,7 @@ fn main() {
             global: true,
             default_color: css::WHITE.into(),
         })
-        .insert_resource(ChunkGenerator::<MyComputeSampler>::new(32, 8.0))
+        .insert_resource(ChunkGeneratorSettings::<MyComputeSampler>::new(32, 8.0))
         .add_systems(Startup, setup)
         .run();
 }

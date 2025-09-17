@@ -25,14 +25,11 @@ struct Triangle {
 }
 
 #[derive(Resource, Debug, Clone)]
-pub struct ChunkGenerator<T> {
+pub struct ChunkGeneratorSettings<T> {
     surface_threshold: f32,
     num_voxels_per_axis: u32,
     chunk_size: f32,
     bounds: Option<GenBounds>,
-    loaded_chunks: HashMap<IVec3, LoadState>,
-    chunks_to_load: Vec<IVec3>,
-    current_chunk: Option<IVec3>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -42,16 +39,13 @@ struct GenBounds {
     max: Vec3,
 }
 
-impl<T> ChunkGenerator<T> {
+impl<T> ChunkGeneratorSettings<T> {
     pub fn new(num_voxels_per_axis: u32, chunk_size: f32) -> Self {
         Self {
             surface_threshold: 0.0,
             num_voxels_per_axis,
             chunk_size,
             bounds: None,
-            loaded_chunks: HashMap::default(),
-            chunks_to_load: Vec::new(),
-            current_chunk: None,
             _marker: std::marker::PhantomData,
         }
     }
@@ -82,24 +76,12 @@ impl<T> ChunkGenerator<T> {
         self.chunk_size / self.num_voxels_per_axis as f32
     }
 
-    pub fn is_chunk_marked(&self, chunk_position: IVec3) -> bool {
-        !self.is_chunk_in_bounds(chunk_position) || self.loaded_chunks.contains_key(&chunk_position)
+    pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
+        (position / self.chunk_size).floor().as_ivec3()
     }
 
-    pub fn is_chunk_generated(&self, chunk_position: IVec3) -> bool {
-        !self.is_chunk_in_bounds(chunk_position)
-            || matches!(
-                self.loaded_chunks.get(&chunk_position),
-                Some(LoadState::Finished)
-            )
-    }
-
-    pub fn is_chunk_with_position_marked(&self, position: Vec3) -> bool {
-        self.is_chunk_marked(self.position_to_chunk(position))
-    }
-
-    pub fn is_chunk_with_position_generated(&self, position: Vec3) -> bool {
-        self.is_chunk_generated(self.position_to_chunk(position))
+    pub fn chunk_to_position(&self, chunk: IVec3) -> Vec3 {
+        chunk.as_vec3() * self.chunk_size
     }
 
     fn is_chunk_in_bounds(&self, chunk_position: IVec3) -> bool {
@@ -115,13 +97,63 @@ impl<T> ChunkGenerator<T> {
             true
         }
     }
+}
 
-    pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
-        (position / self.chunk_size).floor().as_ivec3()
+#[derive(Resource, Debug, Clone)]
+pub struct ChunkGeneratorCache<T> {
+    loaded_chunks: HashMap<IVec3, LoadState>,
+    chunks_to_load: Vec<IVec3>,
+    current_chunk: Option<IVec3>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> ChunkGeneratorCache<T> {
+    pub fn is_chunk_marked(
+        &self,
+        settings: &ChunkGeneratorSettings<T>,
+        chunk_position: IVec3,
+    ) -> bool {
+        !settings.is_chunk_in_bounds(chunk_position)
+            || self.loaded_chunks.contains_key(&chunk_position)
     }
 
-    pub fn chunk_to_position(&self, chunk: IVec3) -> Vec3 {
-        chunk.as_vec3() * self.chunk_size
+    pub fn is_chunk_generated(
+        &self,
+        settings: &ChunkGeneratorSettings<T>,
+        chunk_position: IVec3,
+    ) -> bool {
+        !settings.is_chunk_in_bounds(chunk_position)
+            || matches!(
+                self.loaded_chunks.get(&chunk_position),
+                Some(LoadState::Finished)
+            )
+    }
+
+    pub fn is_chunk_with_position_marked(
+        &self,
+        settings: &ChunkGeneratorSettings<T>,
+        position: Vec3,
+    ) -> bool {
+        self.is_chunk_marked(settings, settings.position_to_chunk(position))
+    }
+
+    pub fn is_chunk_with_position_generated(
+        &self,
+        settings: &ChunkGeneratorSettings<T>,
+        position: Vec3,
+    ) -> bool {
+        self.is_chunk_generated(settings, settings.position_to_chunk(position))
+    }
+}
+
+impl<T> Default for ChunkGeneratorCache<T> {
+    fn default() -> Self {
+        Self {
+            loaded_chunks: default(),
+            chunks_to_load: default(),
+            current_chunk: default(),
+            _marker: default(),
+        }
     }
 }
 
@@ -134,7 +166,7 @@ pub enum LoadState {
 pub struct SampleContext<'a, T> {
     pub world_position: Vec3,
     pub local_position: Vec3,
-    pub generator: &'a ChunkGenerator<T>,
+    pub settings: &'a ChunkGeneratorSettings<T>,
 }
 pub struct MarchingCubesPlugin<Sampler, Material> {
     _marker: std::marker::PhantomData<(Sampler, Material)>,
@@ -154,14 +186,14 @@ impl<
     > MarchingCubesPlugin<Sampler, Material>
 {
     fn update_chunk_loaders(
-        generator: Res<ChunkGenerator<Sampler>>,
+        settings: Res<ChunkGeneratorSettings<Sampler>>,
         mut chunk_loaders: Query<
             (&mut ChunkLoader<Sampler>, &GlobalTransform),
             Changed<GlobalTransform>,
         >,
     ) {
         for (mut chunk_loader, transform) in chunk_loaders.iter_mut() {
-            let chunk_position = (transform.translation() / generator.chunk_size)
+            let chunk_position = (transform.translation() / settings.chunk_size)
                 .floor()
                 .as_ivec3();
 
@@ -173,7 +205,8 @@ impl<
     }
 
     fn queue_chunks(
-        mut generator: ResMut<ChunkGenerator<Sampler>>,
+        settings: Res<ChunkGeneratorSettings<Sampler>>,
+        mut cache: ResMut<ChunkGeneratorCache<Sampler>>,
         chunk_loaders: Query<&ChunkLoader<Sampler>, Changed<ChunkLoader<Sampler>>>,
     ) {
         for chunk_loader in chunk_loaders.iter() {
@@ -196,11 +229,11 @@ impl<
 
             for offset in load_order {
                 let chunk_position = chunk_loader.position + offset.as_ivec3();
-                if !generator.is_chunk_marked(chunk_position) {
-                    generator
+                if !cache.is_chunk_marked(&settings, chunk_position) {
+                    cache
                         .loaded_chunks
                         .insert(chunk_position, LoadState::Loading);
-                    generator.chunks_to_load.push(chunk_position);
+                    cache.chunks_to_load.push(chunk_position);
                     // info!("Queued chunk for loading: {chunk_position:?}");
                 }
             }
@@ -211,14 +244,15 @@ impl<
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
         compute_worker: Res<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
-        mut generator: ResMut<ChunkGenerator<Sampler>>,
+        settings: Res<ChunkGeneratorSettings<Sampler>>,
+        mut cache: ResMut<ChunkGeneratorCache<Sampler>>,
         material: Res<ChunkMaterial<Sampler, Material>>,
     ) {
         if !compute_worker.ready() {
             return;
         };
 
-        let Some(chunk_position) = generator.current_chunk else {
+        let Some(chunk_position) = cache.current_chunk else {
             return;
         };
 
@@ -257,13 +291,13 @@ impl<
                 Name::new(format!("Chunk {chunk_position:?}")),
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(material.material.clone()),
-                Transform::from_translation(generator.chunk_to_position(chunk_position)),
+                Transform::from_translation(settings.chunk_to_position(chunk_position)),
                 Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
             ));
         }
 
-        generator.current_chunk = None;
-        generator
+        cache.current_chunk = None;
+        cache
             .loaded_chunks
             .insert(chunk_position, LoadState::Finished);
     }
@@ -281,20 +315,21 @@ impl<
 
     fn start_chunks(
         mut compute_worker: ResMut<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
-        mut generator: ResMut<ChunkGenerator<Sampler>>,
+        settings: Res<ChunkGeneratorSettings<Sampler>>,
+        mut cache: ResMut<ChunkGeneratorCache<Sampler>>,
     ) {
-        if generator.current_chunk.is_some() {
+        if cache.current_chunk.is_some() {
             return;
         }
 
-        let Some(chunk_position) = generator.chunks_to_load.pop() else {
+        let Some(chunk_position) = cache.chunks_to_load.pop() else {
             return;
         };
 
-        generator.current_chunk = Some(chunk_position);
+        cache.current_chunk = Some(chunk_position);
 
         compute_worker.write("chunk_position", &chunk_position);
-        let empty_densities = vec![0.0f32; generator.num_samples_per_axis().pow(3) as usize];
+        let empty_densities = vec![0.0f32; settings.num_samples_per_axis().pow(3) as usize];
         compute_worker.write_slice("densities", empty_densities.as_slice());
         compute_worker.write("out_vertices_len", &0u32);
         compute_worker.write("out_triangles_len", &0u32);
@@ -322,8 +357,10 @@ impl<
                     Self::start_chunks,
                 )
                     .chain()
-                    .in_set(ChunkGenSystems),
-            );
+                    .in_set(ChunkGenSystems)
+                    .run_if(resource_exists::<ChunkGeneratorCache<Sampler>>),
+            )
+            .init_resource::<ChunkGeneratorCache<Sampler>>();
     }
 }
 
@@ -362,9 +399,9 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
     for MarchingCubesComputeWorker<T>
 {
     fn build(world: &mut World) -> AppComputeWorker<Self> {
-        let Some(generator) = world.get_resource::<ChunkGenerator<T>>() else {
+        let Some(generator) = world.get_resource::<ChunkGeneratorSettings<T>>() else {
             panic!(
-                "ChunkGenerator<{}> resource not found",
+                "ChunkGeneratorSettings<{}> resource not found, did you remember to add it?",
                 std::any::type_name::<T>()
             )
         };
