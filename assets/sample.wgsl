@@ -11,13 +11,13 @@ var<uniform> num_samples_per_axis: u32;
 var<uniform> chunk_size: f32;
 
 @group(0) @binding(4)
-var<storage, read_write> densities: array<f32>;
+var<storage, read_write> heights: array<f32>;
 
 fn coord_to_world(coord: vec3<u32>) -> vec3<f32> {
 	return (vec3<f32>(chunk_position) + (vec3<f32>(coord) - vec3<f32>(1.0)) / f32(num_voxels_per_axis)) * chunk_size;
 }
 
-fn density_index(coord: vec3<u32>) -> u32 {
+fn height_index(coord: vec3<u32>) -> u32 {
 	return coord.x * num_samples_per_axis * num_samples_per_axis + coord.y * num_samples_per_axis + coord.z;
 }
 
@@ -29,7 +29,7 @@ fn main(
 		return;
 	}
 
-	densities[density_index(coord)] = sample_noise(coord_to_world(coord) * 0.1);
+	heights[height_index(coord)] = sample_noise(coord_to_world(coord) * 0.1);
 }
 
 fn sample_noise(coord: vec3<f32>) -> f32 {
