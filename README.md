@@ -1,3 +1,3 @@
-# bevy-marching-cubes
+# bevy-gpu-heightmap
 
-A marching cubes implementation for Bevy.
+A compute shader heightmap implementation for Bevy.

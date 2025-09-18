@@ -27,7 +27,7 @@ struct Triangle {
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkGeneratorSettings<T> {
     surface_threshold: f32,
-    num_voxels_per_axis: u32,
+    num_squares_per_axis: u32,
     chunk_size: f32,
     bounds: Option<GenBounds>,
     _marker: std::marker::PhantomData<T>,
@@ -40,10 +40,10 @@ struct GenBounds {
 }
 
 impl<T> ChunkGeneratorSettings<T> {
-    pub fn new(num_voxels_per_axis: u32, chunk_size: f32) -> Self {
+    pub fn new(num_squares_per_axis: u32, chunk_size: f32) -> Self {
         Self {
             surface_threshold: 0.0,
-            num_voxels_per_axis,
+            num_squares_per_axis,
             chunk_size,
             bounds: None,
             _marker: std::marker::PhantomData,
@@ -61,7 +61,7 @@ impl<T> ChunkGeneratorSettings<T> {
     }
 
     pub fn num_samples_per_axis(&self) -> u32 {
-        self.num_voxels_per_axis + 3 // We sample the next chunk over too for normals
+        self.num_squares_per_axis + 3 // We sample the next chunk over too for normals
     }
 
     pub fn max_num_vertices(&self) -> u64 {
@@ -69,11 +69,11 @@ impl<T> ChunkGeneratorSettings<T> {
     }
 
     pub fn max_num_triangles(&self) -> u64 {
-        (self.num_voxels_per_axis as u64).pow(3) * 5
+        (self.num_squares_per_axis as u64).pow(3) * 5
     }
 
     pub fn voxel_size(&self) -> f32 {
-        self.chunk_size / self.num_voxels_per_axis as f32
+        self.chunk_size / self.num_squares_per_axis as f32
     }
 
     pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
@@ -405,7 +405,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
                 std::any::type_name::<T>()
             )
         };
-        let num_voxels_per_axis = generator.num_voxels_per_axis;
+        let num_squares_per_axis = generator.num_squares_per_axis;
         let num_samples_per_axis = generator.num_samples_per_axis();
         let chunk_size = generator.chunk_size;
         let surface_threshold = generator.surface_threshold;
@@ -414,7 +414,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
         let sampler_dispatch_size =
             (num_samples_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
         let marching_cubes_dispatch_size =
-            (num_voxels_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            (num_squares_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
         let mut worker = AppComputeWorkerBuilder::new(world);
         worker
@@ -423,7 +423,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
                 "densities",
                 size_of::<f32>() as u64 * num_samples_per_axis.pow(3) as u64,
             )
-            .add_uniform("num_voxels_per_axis", &num_voxels_per_axis)
+            .add_uniform("num_squares_per_axis", &num_squares_per_axis)
             .add_uniform("num_samples_per_axis", &num_samples_per_axis)
             .add_uniform("chunk_size", &chunk_size)
             .add_uniform("surface_threshold", &surface_threshold)
@@ -446,7 +446,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
                 &[
                     &[
                         "chunk_position",
-                        "num_voxels_per_axis",
+                        "num_squares_per_axis",
                         "num_samples_per_axis",
                         "chunk_size",
                         "densities",
@@ -463,7 +463,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
                 ],
                 &[
                     "densities",
-                    "num_voxels_per_axis",
+                    "num_squares_per_axis",
                     "num_samples_per_axis",
                     "chunk_size",
                     "surface_threshold",

@@ -1,10 +1,10 @@
 use bevy::color::palettes::{css, tailwind};
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
-use bevy_marching_cubes::chunk_generator::{
+use bevy_gpu_heightmap::chunk_generator::{
     ChunkComputeShader, ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
 };
-use bevy_marching_cubes::*;
+use bevy_gpu_heightmap::*;
 
 fn main() {
     App::new()
