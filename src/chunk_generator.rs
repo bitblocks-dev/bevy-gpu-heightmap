@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use bevy::platform::collections::HashMap;
+use bevy::render::render_resource::binding_types::texture_2d;
+use bevy::render::render_resource::Sampler;
+use bevy::{platform::collections::HashMap, render::render_resource::Texture};
 use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -15,6 +17,11 @@ struct Vertex {
 }
 
 #[derive(Resource, Debug, Clone)]
+pub struct Heightmap {
+    heightmap: Handle<Image>,
+}
+
+#[derive(Resource, Debug, Clone)]
 pub struct ChunkGeneratorSettings<T> {
     num_squares_per_axis: u32,
     num_chunks_per_world_axis: u32,
@@ -24,12 +31,12 @@ pub struct ChunkGeneratorSettings<T> {
 
 #[derive(Debug, Clone)]
 struct GenBounds {
-    min: Vec3,
-    max: Vec3,
+    min: Vec2,
+    max: Vec2,
 }
 
 impl<T> ChunkGeneratorSettings<T> {
-    pub fn new(num_squares_per_axis: u32, num_chunks_per_world_axis: u32) -> Self {
+    pub fn new(heightmap: Handle<Image>, num_squares_per_axis: u32, num_chunks_per_world_axis: u32) -> Self {
         Self {
             num_squares_per_axis,
             num_chunks_per_world_axis,
@@ -38,7 +45,7 @@ impl<T> ChunkGeneratorSettings<T> {
         }
     }
 
-    pub fn with_bounds(mut self, min: Vec3, max: Vec3) -> Self {
+    pub fn with_bounds(mut self, min: Vec2, max: Vec2) -> Self {
         self.bounds = Some(GenBounds { min, max });
         self
     }
@@ -47,35 +54,25 @@ impl<T> ChunkGeneratorSettings<T> {
         self.num_squares_per_axis + 3 // We sample the next chunk over too for normals
     }
 
-    pub fn max_num_vertices(&self) -> u64 {
-        self.max_num_triangles() * 3
-    }
-
-    pub fn max_num_triangles(&self) -> u64 {
-        (self.num_squares_per_axis as u64).pow(3) * 5
-    }
-
-    pub fn voxel_size(&self) -> f32 {
+    pub fn grid_size(&self) -> f32 {
         self.num_chunks_per_world_axis as f32 / self.num_squares_per_axis as f32
     }
 
-    pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
-        (position / self.num_chunks_per_world_axis as f32).floor().as_ivec3()
+    pub fn position_to_chunk(&self, position: Vec2) -> IVec2 {
+        (position / self.num_chunks_per_world_axis as f32).floor().as_ivec2()
     }
 
-    pub fn chunk_to_position(&self, chunk: IVec3) -> Vec3 {
-        chunk.as_vec3() * self.num_chunks_per_world_axis as f32
+    pub fn chunk_to_position(&self, chunk: IVec2) -> Vec2 {
+        chunk.as_vec2() * self.num_chunks_per_world_axis as f32
     }
 
-    fn is_chunk_in_bounds(&self, chunk_position: IVec3) -> bool {
+    fn is_chunk_in_bounds(&self, chunk_position: IVec2) -> bool {
         if let Some(bounds) = &self.bounds {
             let position = self.chunk_to_position(chunk_position);
             position.x >= bounds.min.x
                 && position.x <= bounds.max.x
                 && position.y >= bounds.min.y
                 && position.y <= bounds.max.y
-                && position.z >= bounds.min.z
-                && position.z <= bounds.max.z
         } else {
             true
         }
@@ -84,9 +81,9 @@ impl<T> ChunkGeneratorSettings<T> {
 
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkGeneratorCache<T> {
-    loaded_chunks: HashMap<IVec3, LoadState>,
-    chunks_to_load: Vec<IVec3>,
-    current_chunk: Option<IVec3>,
+    loaded_chunks: HashMap<IVec2, LoadState>,
+    chunks_to_load: Vec<IVec2>,
+    current_chunk: Option<IVec2>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -94,7 +91,7 @@ impl<T> ChunkGeneratorCache<T> {
     pub fn is_chunk_marked(
         &self,
         settings: &ChunkGeneratorSettings<T>,
-        chunk_position: IVec3,
+        chunk_position: IVec2,
     ) -> bool {
         !settings.is_chunk_in_bounds(chunk_position)
             || self.loaded_chunks.contains_key(&chunk_position)
@@ -103,7 +100,7 @@ impl<T> ChunkGeneratorCache<T> {
     pub fn is_chunk_generated(
         &self,
         settings: &ChunkGeneratorSettings<T>,
-        chunk_position: IVec3,
+        chunk_position: IVec2,
     ) -> bool {
         !settings.is_chunk_in_bounds(chunk_position)
             || matches!(
@@ -115,7 +112,7 @@ impl<T> ChunkGeneratorCache<T> {
     pub fn is_chunk_with_position_marked(
         &self,
         settings: &ChunkGeneratorSettings<T>,
-        position: Vec3,
+        position: Vec2,
     ) -> bool {
         self.is_chunk_marked(settings, settings.position_to_chunk(position))
     }
@@ -123,7 +120,7 @@ impl<T> ChunkGeneratorCache<T> {
     pub fn is_chunk_with_position_generated(
         &self,
         settings: &ChunkGeneratorSettings<T>,
-        position: Vec3,
+        position: Vec2,
     ) -> bool {
         self.is_chunk_generated(settings, settings.position_to_chunk(position))
     }
@@ -147,8 +144,8 @@ pub enum LoadState {
 }
 
 pub struct SampleContext<'a, T> {
-    pub world_position: Vec3,
-    pub local_position: Vec3,
+    pub world_position: Vec2,
+    pub local_position: Vec2,
     pub settings: &'a ChunkGeneratorSettings<T>,
 }
 pub struct HeightmapPlugin<Sampler, Material> {
@@ -176,9 +173,9 @@ impl<
         >,
     ) {
         for (mut chunk_loader, transform) in chunk_loaders.iter_mut() {
-            let chunk_position = (transform.translation() / settings.num_chunks_per_world_axis as f32)
+            let chunk_position = (transform.translation().xy() / settings.num_chunks_per_world_axis as f32)
                 .floor()
-                .as_ivec3();
+                .as_ivec2();
 
             // Properly update change detection
             if chunk_loader.position != chunk_position {
@@ -196,9 +193,7 @@ impl<
             let mut load_order = Vec::new();
             for x in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
                 for y in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
-                    for z in -chunk_loader.loading_radius..=chunk_loader.loading_radius {
-                        load_order.push(Vec3::new(x as f32, y as f32, z as f32));
-                    }
+                    load_order.push(Vec2::new(x as f32, y as f32));
                 }
             }
 
@@ -211,7 +206,7 @@ impl<
             });
 
             for offset in load_order {
-                let chunk_position = chunk_loader.position + offset.as_ivec3();
+                let chunk_position = chunk_loader.position + offset.as_ivec2();
                 if !cache.is_chunk_marked(&settings, chunk_position) {
                     cache
                         .loaded_chunks
@@ -226,7 +221,7 @@ impl<
     fn finish_chunks(
         mut commands: Commands,
         mut meshes: ResMut<Assets<Mesh>>,
-        compute_worker: Res<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
+        compute_worker: Res<AppComputeWorker<HeightmapComputeWorker<Sampler>>>,
         settings: Res<ChunkGeneratorSettings<Sampler>>,
         mut cache: ResMut<ChunkGeneratorCache<Sampler>>,
         material: Res<ChunkMaterial<Sampler, Material>>,
@@ -262,11 +257,13 @@ impl<
                 vertices.iter().map(|v| v.height).collect::<Vec<_>>(),
             );
 
+            let translation = vec3(settings.chunk_to_position(chunk_position).x, 0.0, settings.chunk_to_position(chunk_position).y);
+
             commands.spawn((
                 Name::new(format!("Chunk {chunk_position:?}")),
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(material.material.clone()),
-                Transform::from_translation(settings.chunk_to_position(chunk_position)),
+                Transform::from_translation(translation),
                 Chunk::<Sampler>(chunk_position, std::marker::PhantomData::<Sampler>),
             ));
         }
@@ -278,7 +275,7 @@ impl<
     }
 
     fn read_vec<T: Pod + Zeroable>(
-        worker: &AppComputeWorker<MarchingCubesComputeWorker<Sampler>>,
+        worker: &AppComputeWorker<HeightmapComputeWorker<Sampler>>,
         name: &str,
         len_name: &str,
     ) -> Vec<T> {
@@ -289,7 +286,7 @@ impl<
     }
 
     fn start_chunks(
-        mut compute_worker: ResMut<AppComputeWorker<MarchingCubesComputeWorker<Sampler>>>,
+        mut compute_worker: ResMut<AppComputeWorker<HeightmapComputeWorker<Sampler>>>,
         settings: Res<ChunkGeneratorSettings<Sampler>>,
         mut cache: ResMut<ChunkGeneratorCache<Sampler>>,
     ) {
@@ -303,7 +300,7 @@ impl<
 
         cache.current_chunk = Some(chunk_position);
 
-        let empty_densities = vec![0.0f32; settings.num_samples_per_axis().pow(6) as usize];
+        let empty_densities = vec![0.0f32; settings.num_samples_per_axis().pow(4) as usize];
         compute_worker.write_slice("vertices", empty_densities.as_slice());
         compute_worker.write("vertices_len", &0u32);
         compute_worker.execute();
@@ -320,7 +317,7 @@ impl<
             app.add_plugins(AppComputePlugin);
         }
 
-        app.add_plugins(AppComputeWorkerPlugin::<MarchingCubesComputeWorker<Sampler>>::default())
+        app.add_plugins(AppComputeWorkerPlugin::<HeightmapComputeWorker<Sampler>>::default())
             .add_systems(
                 Update,
                 (
@@ -353,23 +350,23 @@ pub trait ChunkComputeShader: ComputeShader {
 }
 
 #[derive(TypePath)]
-struct MarchingCubesShader;
+struct HeightmapShader;
 
-impl ComputeShader for MarchingCubesShader {
+impl ComputeShader for HeightmapShader {
     fn shader() -> ShaderRef {
         "heightmap.wgsl".into()
     }
 }
 
-pub type ChunkComputeWorker<Sampler> = AppComputeWorker<MarchingCubesComputeWorker<Sampler>>;
+pub type ChunkComputeWorker<Sampler> = AppComputeWorker<HeightmapComputeWorker<Sampler>>;
 
 #[derive(Resource)]
-pub struct MarchingCubesComputeWorker<T> {
+pub struct HeightmapComputeWorker<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
-    for MarchingCubesComputeWorker<T>
+    for HeightmapComputeWorker<T>
 {
     fn build(world: &mut World) -> AppComputeWorker<Self> {
         let Some(generator) = world.get_resource::<ChunkGeneratorSettings<T>>() else {
@@ -378,11 +375,18 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
                 std::any::type_name::<T>()
             )
         };
+
+        let Some(heightmap_texture) = world.get_resource::<Heightmap>() else {
+            panic!(
+                "No heightmap provided, Did you remember to add it?"
+            )
+        };
+
+        let texture_handle = heightmap_texture.heightmap;
+        let texture = todo!();
         let num_squares_per_axis = generator.num_squares_per_axis;
         let num_samples_per_axis = generator.num_samples_per_axis();
         let num_chunks_per_world_axis = generator.num_chunks_per_world_axis;
-        let max_num_vertices = generator.max_num_vertices();
-        let max_num_triangles = generator.max_num_triangles();
         let sampler_dispatch_size =
             (num_samples_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
         let heightmap_dispatch_size =
@@ -397,11 +401,12 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
             .add_uniform("num_squares_per_axis", &num_squares_per_axis)
             .add_uniform("num_samples_per_axis", &num_samples_per_axis)
             .add_uniform("num_chunks_per_world_axis", &num_chunks_per_world_axis)
-            .add_pass::<MarchingCubesShader>(
+            .add_uniform("heightmap", &texture)
+            .add_pass::<HeightmapShader>(
                 [
                     heightmap_dispatch_size,
                     heightmap_dispatch_size,
-                    heightmap_dispatch_size,
+                    1,
                 ],
                 &[
                     "heightmap_sampler",
@@ -424,7 +429,7 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
 
 #[derive(Component, Default, Debug)]
 pub struct ChunkLoader<T> {
-    pub position: IVec3,
+    pub position: IVec2,
     pub loading_radius: i32,
     _marker: std::marker::PhantomData<T>,
 }
@@ -432,7 +437,7 @@ pub struct ChunkLoader<T> {
 impl<T> ChunkLoader<T> {
     pub fn new(loading_radius: i32) -> Self {
         Self {
-            position: IVec3::ZERO,
+            position: IVec2::ZERO,
             loading_radius,
             _marker: std::marker::PhantomData,
         }
