@@ -2,7 +2,7 @@ use bevy::color::palettes::{css, tailwind};
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy_gpu_heightmap::chunk_generator::{
-    ChunkComputeShader, ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, MarchingCubesPlugin,
+    ChunkComputeShader, ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, HeightmapPlugin,
 };
 use bevy_gpu_heightmap::*;
 
@@ -12,13 +12,13 @@ fn main() {
             DefaultPlugins,
             WireframePlugin::default(),
             bevy_panorbit_camera::PanOrbitCameraPlugin,
-            MarchingCubesPlugin::<MyComputeSampler, StandardMaterial>::default(),
+            HeightmapPlugin::<MyComputeSampler, StandardMaterial>::default(),
         ))
         .insert_resource(WireframeConfig {
             global: true,
             default_color: css::WHITE.into(),
         })
-        .insert_resource(ChunkGeneratorSettings::<MyComputeSampler>::new(32, 8.0))
+        .insert_resource(ChunkGeneratorSettings::<MyComputeSampler>::new(32, 8))
         .add_systems(Startup, setup)
         .run();
 }

@@ -10,25 +10,14 @@ use crate::Chunk;
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct Vertex {
-    position: Vec3,
-    _padding1: f32,
+    height: f32,
     normal: Vec3,
-    _padding2: f32,
-}
-
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-struct Triangle {
-    vertex_a: u32,
-    vertex_b: u32,
-    vertex_c: u32,
 }
 
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkGeneratorSettings<T> {
-    surface_threshold: f32,
     num_squares_per_axis: u32,
-    chunk_size: f32,
+    num_chunks_per_world_axis: u32,
     bounds: Option<GenBounds>,
     _marker: std::marker::PhantomData<T>,
 }
@@ -40,19 +29,13 @@ struct GenBounds {
 }
 
 impl<T> ChunkGeneratorSettings<T> {
-    pub fn new(num_squares_per_axis: u32, chunk_size: f32) -> Self {
+    pub fn new(num_squares_per_axis: u32, num_chunks_per_world_axis: u32) -> Self {
         Self {
-            surface_threshold: 0.0,
             num_squares_per_axis,
-            chunk_size,
+            num_chunks_per_world_axis,
             bounds: None,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    pub fn with_surface_threshold(mut self, surface_threshold: f32) -> Self {
-        self.surface_threshold = surface_threshold;
-        self
     }
 
     pub fn with_bounds(mut self, min: Vec3, max: Vec3) -> Self {
@@ -73,15 +56,15 @@ impl<T> ChunkGeneratorSettings<T> {
     }
 
     pub fn voxel_size(&self) -> f32 {
-        self.chunk_size / self.num_squares_per_axis as f32
+        self.num_chunks_per_world_axis as f32 / self.num_squares_per_axis as f32
     }
 
     pub fn position_to_chunk(&self, position: Vec3) -> IVec3 {
-        (position / self.chunk_size).floor().as_ivec3()
+        (position / self.num_chunks_per_world_axis as f32).floor().as_ivec3()
     }
 
     pub fn chunk_to_position(&self, chunk: IVec3) -> Vec3 {
-        chunk.as_vec3() * self.chunk_size
+        chunk.as_vec3() * self.num_chunks_per_world_axis as f32
     }
 
     fn is_chunk_in_bounds(&self, chunk_position: IVec3) -> bool {
@@ -168,11 +151,11 @@ pub struct SampleContext<'a, T> {
     pub local_position: Vec3,
     pub settings: &'a ChunkGeneratorSettings<T>,
 }
-pub struct MarchingCubesPlugin<Sampler, Material> {
+pub struct HeightmapPlugin<Sampler, Material> {
     _marker: std::marker::PhantomData<(Sampler, Material)>,
 }
 
-impl<Sampler, Material> Default for MarchingCubesPlugin<Sampler, Material> {
+impl<Sampler, Material> Default for HeightmapPlugin<Sampler, Material> {
     fn default() -> Self {
         Self {
             _marker: std::marker::PhantomData,
@@ -183,7 +166,7 @@ impl<Sampler, Material> Default for MarchingCubesPlugin<Sampler, Material> {
 impl<
         Sampler: ChunkComputeShader + Send + Sync + 'static,
         Material: Asset + bevy::prelude::Material,
-    > MarchingCubesPlugin<Sampler, Material>
+    > HeightmapPlugin<Sampler, Material>
 {
     fn update_chunk_loaders(
         settings: Res<ChunkGeneratorSettings<Sampler>>,
@@ -193,7 +176,7 @@ impl<
         >,
     ) {
         for (mut chunk_loader, transform) in chunk_loaders.iter_mut() {
-            let chunk_position = (transform.translation() / settings.chunk_size)
+            let chunk_position = (transform.translation() / settings.num_chunks_per_world_axis as f32)
                 .floor()
                 .as_ivec3();
 
@@ -259,24 +242,16 @@ impl<
         // info!("Finished chunk: {chunk_position:?}");
 
         let vertices =
-            Self::read_vec::<Vertex>(&compute_worker, "out_vertices", "out_vertices_len");
-        let triangles =
-            Self::read_vec::<Triangle>(&compute_worker, "out_triangles", "out_triangles_len");
+            Self::read_vec::<Vertex>(&compute_worker, "vertices", "vertices_len");
 
-        if !vertices.is_empty() && !triangles.is_empty() {
+        if !vertices.is_empty() {
             let mesh = Mesh::new(
                 bevy::render::mesh::PrimitiveTopology::TriangleList,
                 bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
             )
-            .with_inserted_indices(bevy::render::mesh::Indices::U32(
-                triangles
-                    .iter()
-                    .flat_map(|t| [t.vertex_c, t.vertex_b, t.vertex_a])
-                    .collect(),
-            ))
             .with_inserted_attribute(
                 Mesh::ATTRIBUTE_POSITION,
-                vertices.iter().map(|v| v.position).collect::<Vec<_>>(),
+                vertices.iter().map(|v| v.height).collect::<Vec<_>>(),
             )
             .with_inserted_attribute(
                 Mesh::ATTRIBUTE_NORMAL,
@@ -284,7 +259,7 @@ impl<
             )
             .with_inserted_attribute(
                 Mesh::ATTRIBUTE_UV_0,
-                vertices.iter().map(|v| v.position.xy()).collect::<Vec<_>>(),
+                vertices.iter().map(|v| v.height).collect::<Vec<_>>(),
             );
 
             commands.spawn((
@@ -328,11 +303,9 @@ impl<
 
         cache.current_chunk = Some(chunk_position);
 
-        compute_worker.write("chunk_position", &chunk_position);
-        let empty_densities = vec![0.0f32; settings.num_samples_per_axis().pow(3) as usize];
-        compute_worker.write_slice("densities", empty_densities.as_slice());
-        compute_worker.write("out_vertices_len", &0u32);
-        compute_worker.write("out_triangles_len", &0u32);
+        let empty_densities = vec![0.0f32; settings.num_samples_per_axis().pow(6) as usize];
+        compute_worker.write_slice("vertices", empty_densities.as_slice());
+        compute_worker.write("vertices_len", &0u32);
         compute_worker.execute();
     }
 }
@@ -340,7 +313,7 @@ impl<
 impl<
         Sampler: ChunkComputeShader + Send + Sync + 'static,
         Material: Asset + bevy::prelude::Material,
-    > Plugin for MarchingCubesPlugin<Sampler, Material>
+    > Plugin for HeightmapPlugin<Sampler, Material>
 {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<AppComputePlugin>() {
@@ -384,7 +357,7 @@ struct MarchingCubesShader;
 
 impl ComputeShader for MarchingCubesShader {
     fn shader() -> ShaderRef {
-        "marching_cubes.wgsl".into()
+        "heightmap.wgsl".into()
     }
 }
 
@@ -407,70 +380,37 @@ impl<T: ChunkComputeShader + Send + Sync + 'static> ComputeWorker
         };
         let num_squares_per_axis = generator.num_squares_per_axis;
         let num_samples_per_axis = generator.num_samples_per_axis();
-        let chunk_size = generator.chunk_size;
-        let surface_threshold = generator.surface_threshold;
+        let num_chunks_per_world_axis = generator.num_chunks_per_world_axis;
         let max_num_vertices = generator.max_num_vertices();
         let max_num_triangles = generator.max_num_triangles();
         let sampler_dispatch_size =
             (num_samples_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
-        let marching_cubes_dispatch_size =
+        let heightmap_dispatch_size =
             (num_squares_per_axis as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
         let mut worker = AppComputeWorkerBuilder::new(world);
         worker
-            .add_uniform("chunk_position", &IVec3::ZERO)
             .add_empty_rw_storage(
-                "densities",
-                size_of::<f32>() as u64 * num_samples_per_axis.pow(3) as u64,
+                "vertices",
+                size_of::<f32>() as u64 * num_samples_per_axis.pow(2) as u64,
             )
             .add_uniform("num_squares_per_axis", &num_squares_per_axis)
             .add_uniform("num_samples_per_axis", &num_samples_per_axis)
-            .add_uniform("chunk_size", &chunk_size)
-            .add_uniform("surface_threshold", &surface_threshold)
-            .add_empty_staging(
-                "out_vertices",
-                size_of::<Vertex>() as u64 * max_num_vertices,
-            )
-            .add_empty_staging("out_vertices_len", size_of::<u32>() as u64)
-            .add_empty_staging(
-                "out_triangles",
-                size_of::<Triangle>() as u64 * max_num_triangles,
-            )
-            .add_empty_staging("out_triangles_len", size_of::<u32>() as u64)
-            .add_pass::<T>(
-                [
-                    sampler_dispatch_size,
-                    sampler_dispatch_size,
-                    sampler_dispatch_size,
-                ],
-                &[
-                    &[
-                        "chunk_position",
-                        "num_squares_per_axis",
-                        "num_samples_per_axis",
-                        "chunk_size",
-                        "densities",
-                    ],
-                    T::extra_sample_bindings().as_slice(),
-                ]
-                .concat(),
-            )
+            .add_uniform("num_chunks_per_world_axis", &num_chunks_per_world_axis)
             .add_pass::<MarchingCubesShader>(
                 [
-                    marching_cubes_dispatch_size,
-                    marching_cubes_dispatch_size,
-                    marching_cubes_dispatch_size,
+                    heightmap_dispatch_size,
+                    heightmap_dispatch_size,
+                    heightmap_dispatch_size,
                 ],
                 &[
-                    "densities",
+                    "heightmap_sampler",
+                    "heightmap",
                     "num_squares_per_axis",
                     "num_samples_per_axis",
-                    "chunk_size",
-                    "surface_threshold",
-                    "out_vertices",
-                    "out_vertices_len",
-                    "out_triangles",
-                    "out_triangles_len",
+                    "num_chunks_per_world_axis",
+                    "vertices",
+                    "vertices_len",
                 ],
             )
             .asynchronous(Some(Duration::from_millis(1000)))
