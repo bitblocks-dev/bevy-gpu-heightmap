@@ -1,10 +1,10 @@
-use bevy::color::palettes::{css, tailwind};
+use bevy::color::palettes::css;
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy_gpu_heightmap::chunk_generator::{
-    ChunkComputeShader, ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, HeightmapPlugin,
+    ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, HeightmapPlugin,
 };
-use bevy_gpu_heightmap::*;
+use bevy::asset::embedded_asset;
 
 fn main() {
     App::new()
@@ -12,27 +12,37 @@ fn main() {
             DefaultPlugins,
             WireframePlugin::default(),
             bevy_panorbit_camera::PanOrbitCameraPlugin,
-            HeightmapPlugin::<MyComputeSampler, StandardMaterial>::default(),
+            NoiseExamplePlugin,
         ))
         .insert_resource(WireframeConfig {
             global: true,
             default_color: css::WHITE.into(),
         })
-        .insert_resource(ChunkGeneratorSettings::<MyComputeSampler>::new(32, 8))
         .add_systems(Startup, setup)
         .run();
 }
 
-#[derive(TypePath)]
-struct MyComputeSampler;
-impl ComputeShader for MyComputeSampler {
-    fn shader() -> ShaderRef {
-        "sample.wgsl".into()
+pub struct NoiseExamplePlugin;
+impl Plugin for NoiseExamplePlugin {
+    fn build(&self, app: &mut App) {
+        debug!("Building noise example plugin");
+        let (heightmap_handle, material_handle) = {
+            let world = app.world_mut();
+            let heightmap_handle = ;
+            let mut materials: Mut<'_, Assets<StandardMaterial>> = world.resource_mut::<Assets<StandardMaterial>>();
+            let material_handle = materials.add(Color::from(tailwind::EMERALD_500));
+            (heightmap_handle, material_handle)
+        };
+
+        app
+            .insert_resource(ChunkGeneratorSettings::new(heightmap_handle, 32, 8))
+            .insert_resource(ChunkMaterial::<StandardMaterial>::new(material_handle))
+            .add_plugins(HeightmapPlugin::<StandardMaterial>::default());
     }
 }
-impl ChunkComputeShader for MyComputeSampler {}
 
-fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup(mut commands: Commands) {
+    debug!("Starting noise example");
     commands.spawn((
         Name::new("Camera"),
         Camera3d::default(),
@@ -58,9 +68,5 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>
         },
     ));
 
-    commands.spawn(ChunkLoader::<MyComputeSampler>::new(1));
-
-    commands.insert_resource(ChunkMaterial::<MyComputeSampler, StandardMaterial>::new(
-        materials.add(Color::from(tailwind::EMERALD_500)),
-    ));
+    commands.spawn(ChunkLoader::new(1));
 }

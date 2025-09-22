@@ -7,7 +7,7 @@ edition = "2024"
 bevy = { version = "0.16.1", default-features = false, features = [
 	"bevy_render",
 ] }
-bevy_app_compute = "0.16.0"
+bevy_app_compute = { git = "https://github.com/bitblocks-dev/bevy_app_compute.git" }
 bytemuck = "1.23.2"
 
 [dev-dependencies]

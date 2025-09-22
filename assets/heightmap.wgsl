@@ -13,15 +13,12 @@ var<uniform> heightmap: texture_2d<f32>;
 var<uniform> num_squares_per_axis: u32;
 
 @group(0) @binding(3)
-var<uniform> num_samples_per_axis: u32;
-
-@group(0) @binding(4)
 var<uniform> num_chunks_per_world_axis: u32;
 
-@group(0) @binding(5)
+@group(0) @binding(4)
 var<storage, read_write> vertices: array<Vertex>;
 
-@group(0) @binding(6)
+@group(0) @binding(5)
 var<uniform> vertices_len: u32;
 
 fn coord_to_tex(coord: vec2<i32>) -> vec3<f32> {
