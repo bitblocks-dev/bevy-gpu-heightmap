@@ -1,10 +1,9 @@
-use bevy::color::palettes::css;
+use bevy::color::palettes::{css, tailwind};
 use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy_gpu_heightmap::chunk_generator::{
     ChunkGeneratorSettings, ChunkLoader, ChunkMaterial, HeightmapPlugin,
 };
-use bevy::asset::embedded_asset;
 
 fn main() {
     App::new()
@@ -28,7 +27,7 @@ impl Plugin for NoiseExamplePlugin {
         debug!("Building noise example plugin");
         let (heightmap_handle, material_handle) = {
             let world = app.world_mut();
-            let heightmap_handle = ;
+            let heightmap_handle = world.load_asset("heightmap.png");
             let mut materials: Mut<'_, Assets<StandardMaterial>> = world.resource_mut::<Assets<StandardMaterial>>();
             let material_handle = materials.add(Color::from(tailwind::EMERALD_500));
             (heightmap_handle, material_handle)

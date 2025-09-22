@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use bevy::log::tracing_subscriber::field::debug;
-use bevy::render::render_resource::binding_types::{sampler, texture_2d};
-use bevy::render::render_resource::{Sampler, SamplerDescriptor, TextureView, TextureViewId};
-use bevy::{platform::collections::HashMap, render::render_resource::Texture};
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy_app_compute::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -371,11 +368,11 @@ impl ComputeWorker
             (
                 generator.num_squares_per_axis,
                 generator.num_chunks_per_world_axis,
-                generator.heightmap.clone(),
+                generator.heightmap.clone(), // The heightmap image provided by the user code. A Handle<Image>
             )
         };
 
-        // Extract heightmap before mutable borrow
+        // Extract the Image from the Assets<Image> resource using the Handle<Image>
         let heightmap = {
             let images = world
                 .get_resource::<Assets<Image>>()
